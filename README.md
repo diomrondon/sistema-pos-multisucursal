@@ -1,4 +1,4 @@
-404: Not # 🛒 Sistema POS & ERP Administrativo Multisucursal
+# 🛒 Sistema POS & ERP Administrativo Multisucursal
 
 Solución integral de punto de venta (POS), control de inventario en tiempo real, gestión financiera multidivisa y tienda online para operaciones de una o múltiples sucursales con soporte 100% Offline.
 
