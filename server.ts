@@ -353,7 +353,7 @@ app.post('/api/compras/parse-invoice', async (req, res) => {
 
     // Clean base64 string if it contains a data URI prefix.
     const cleanBase64 = fileBase64.includes(',') ? fileBase64.slice(fileBase64.indexOf(',') + 1) : fileBase64;
-    const normalizedBase64 = cleanBase64.replace(/\\s/g, '');
+    const normalizedBase64 = cleanBase64.replace(/\s/g, '');
     const maxBase64Length = Math.ceil(maxFileBytes / 3) * 4;
 
     if (
@@ -380,8 +380,8 @@ app.post('/api/compras/parse-invoice', async (req, res) => {
 
     const filePart = {
       inlineData: {
-        data: cleanBase64,
-        mimeType: mimeType,
+        data: normalizedBase64,
+        mimeType: mimeType.toLowerCase(),
       },
     };
 
