@@ -85,7 +85,16 @@ app.get('/api/pedidos', (req, res) => {
 app.post('/api/pedidos', (req, res) => {
   try {
     const pedido = req.body;
-    if (!pedido || !pedido.clienteNombre) {
+    if (
+      !pedido ||
+      typeof pedido !== 'object' ||
+      Array.isArray(pedido) ||
+      typeof pedido.id !== 'string' ||
+      !pedido.id.trim() ||
+      typeof pedido.clienteNombre !== 'string' ||
+      !pedido.clienteNombre.trim() ||
+      !Array.isArray(pedido.detalles)
+    ) {
       return res.status(400).json({ success: false, error: 'Datos de pedido inválidos' });
     }
     const db = readServerDb();
@@ -94,7 +103,15 @@ app.post('/api/pedidos', (req, res) => {
     }
     const existingIndex = db.pedidos.findIndex((p: any) => p.id === pedido.id);
     if (existingIndex >= 0) {
-      db.pedidos[existingIndex] = pedido;
+      const existing = db.pedidos[existingIndex];
+      // A repeated client submission must not roll back POS-managed status/payment fields.
+      db.pedidos[existingIndex] = {
+        ...pedido,
+        estado: existing.estado ?? pedido.estado,
+        ventaIdGenerada: existing.ventaIdGenerada ?? pedido.ventaIdGenerada,
+        detallePago: existing.detallePago ?? pedido.detallePago,
+        correlativoFactura: existing.correlativoFactura ?? pedido.correlativoFactura,
+      };
     } else {
       db.pedidos.unshift(pedido);
     }
@@ -154,9 +171,40 @@ app.post('/api/sync/state', (req, res) => {
     if (productos) db.productos = productos;
     if (inventario) db.inventario = inventario;
     if (Array.isArray(pedidos)) {
-      const map = new Map();
-      (db.pedidos || []).forEach((p: any) => map.set(p.id, p));
-      pedidos.forEach((p: any) => map.set(p.id, p));
+      if (pedidos.some((p: any) =>
+        !p ||
+        typeof p !== 'object' ||
+        Array.isArray(p) ||
+        typeof p.id !== 'string' ||
+        !p.id.trim() ||
+        typeof p.clienteNombre !== 'string' ||
+        !Array.isArray(p.detalles)
+      )) {
+        return res.status(400).json({ success: false, error: 'La lista contiene pedidos inválidos' });
+      }
+
+      const map = new Map<string, any>();
+      (db.pedidos || []).forEach((p: any) => {
+        if (p && typeof p.id === 'string' && p.id.trim()) map.set(p.id, p);
+      });
+
+      pedidos.forEach((incoming: any) => {
+        const existing = map.get(incoming.id);
+        if (!existing) {
+          map.set(incoming.id, incoming);
+          return;
+        }
+
+        // Preserve server/POS-managed fields when an older device syncs stale data.
+        map.set(incoming.id, {
+          ...incoming,
+          estado: existing.estado ?? incoming.estado,
+          ventaIdGenerada: existing.ventaIdGenerada ?? incoming.ventaIdGenerada,
+          detallePago: existing.detallePago ?? incoming.detallePago,
+          correlativoFactura: existing.correlativoFactura ?? incoming.correlativoFactura,
+        });
+      });
+
       db.pedidos = Array.from(map.values()).sort(
         (a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime()
       );
