@@ -24,35 +24,42 @@ interface ServerDatabase {
 }
 
 function readServerDb(): ServerDatabase {
-  try {
-    if (!fs.existsSync(DB_DIR)) {
-      fs.mkdirSync(DB_DIR, { recursive: true });
-    }
-    if (fs.existsSync(DB_FILE)) {
-      const data = fs.readFileSync(DB_FILE, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error('Error reading server DB:', err);
+  fs.mkdirSync(DB_DIR, { recursive: true });
+
+  if (!fs.existsSync(DB_FILE)) {
+    return {
+      pedidos: [],
+      empresaConfig: null,
+      tiendaConfig: null,
+      productos: null,
+      inventario: null,
+    };
   }
+
+  // Do not silently replace a damaged database with empty data.
+  const data = fs.readFileSync(DB_FILE, 'utf-8');
+  const parsed: unknown = JSON.parse(data);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('La base de datos del servidor tiene un formato inválido. No se modificó el archivo.');
+  }
+
+  const db = parsed as Partial<ServerDatabase>;
   return {
-    pedidos: [],
-    empresaConfig: null,
-    tiendaConfig: null,
-    productos: null,
-    inventario: null,
+    pedidos: Array.isArray(db.pedidos) ? db.pedidos : [],
+    empresaConfig: db.empresaConfig ?? null,
+    tiendaConfig: db.tiendaConfig ?? null,
+    productos: Array.isArray(db.productos) ? db.productos : null,
+    inventario: Array.isArray(db.inventario) ? db.inventario : null,
   };
 }
 
-function saveServerDb(db: ServerDatabase) {
-  try {
-    if (!fs.existsSync(DB_DIR)) {
-      fs.mkdirSync(DB_DIR, { recursive: true });
-    }
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving server DB:', err);
-  }
+function saveServerDb(db: ServerDatabase): void {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+
+  // Write to a temporary file first, then replace the database atomically.
+  const tempFile = `${DB_FILE}.tmp`;
+  fs.writeFileSync(tempFile, JSON.stringify(db, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  fs.renameSync(tempFile, DB_FILE);
 }
 
 // Middleware for parsing JSON with generous limit for images and PDFs
