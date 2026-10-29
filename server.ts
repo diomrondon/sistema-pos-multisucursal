@@ -328,19 +328,55 @@ function getGenAI(): GoogleGenAI {
 // Parse invoice image or PDF using Gemini 3.8 Flash
 app.post('/api/compras/parse-invoice', async (req, res) => {
   try {
-    const { fileBase64, mimeType } = req.body;
+    const { fileBase64, mimeType } = req.body ?? {};
+    const allowedMimeTypes = new Set([
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ]);
+    const maxFileBytes = 10 * 1024 * 1024;
 
-    if (!fileBase64 || !mimeType) {
+    if (typeof fileBase64 !== 'string' || typeof mimeType !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'Debe proporcionar la imagen o archivo PDF en formato base64 y su tipo MIME.',
       });
     }
 
-    const ai = getGenAI();
+    if (!allowedMimeTypes.has(mimeType.toLowerCase())) {
+      return res.status(415).json({
+        success: false,
+        error: 'Tipo de archivo no permitido. Use PDF, JPG, PNG o WEBP.',
+      });
+    }
 
-    // Clean base64 string if it contains data URI prefix
-    const cleanBase64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
+    // Clean base64 string if it contains a data URI prefix.
+    const cleanBase64 = fileBase64.includes(',') ? fileBase64.slice(fileBase64.indexOf(',') + 1) : fileBase64;
+    const normalizedBase64 = cleanBase64.replace(/\\s/g, '');
+    const maxBase64Length = Math.ceil(maxFileBytes / 3) * 4;
+
+    if (
+      normalizedBase64.length === 0 ||
+      normalizedBase64.length > maxBase64Length ||
+      normalizedBase64.length % 4 !== 0 ||
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(normalizedBase64)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'El archivo está vacío, es demasiado grande o no tiene un formato base64 válido.',
+      });
+    }
+
+    const decodedBytes = Buffer.from(normalizedBase64, 'base64');
+    if (decodedBytes.length === 0 || decodedBytes.length > maxFileBytes) {
+      return res.status(413).json({
+        success: false,
+        error: 'El archivo supera el límite permitido de 10 MB.',
+      });
+    }
+
+    const ai = getGenAI();
 
     const filePart = {
       inlineData: {
