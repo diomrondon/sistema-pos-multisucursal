@@ -180,7 +180,24 @@ app.get('/api/sync/state', (req, res) => {
 
 app.post('/api/sync/state', (req, res) => {
   try {
-    const { empresaConfig, tiendaConfig, productos, inventario, pedidos } = req.body;
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ success: false, error: 'Datos de sincronización inválidos' });
+    }
+
+    const { empresaConfig, tiendaConfig, productos, inventario, pedidos } = body;
+    if (
+      (empresaConfig !== undefined && empresaConfig !== null &&
+        (typeof empresaConfig !== 'object' || Array.isArray(empresaConfig))) ||
+      (tiendaConfig !== undefined && tiendaConfig !== null &&
+        (typeof tiendaConfig !== 'object' || Array.isArray(tiendaConfig))) ||
+      (productos !== undefined && productos !== null && !Array.isArray(productos)) ||
+      (inventario !== undefined && inventario !== null && !Array.isArray(inventario)) ||
+      (pedidos !== undefined && !Array.isArray(pedidos))
+    ) {
+      return res.status(400).json({ success: false, error: 'La configuración, los productos, el inventario o los pedidos tienen un formato inválido' });
+    }
+
     const db = readServerDb();
     if (empresaConfig) db.empresaConfig = empresaConfig;
     if (tiendaConfig) db.tiendaConfig = tiendaConfig;
