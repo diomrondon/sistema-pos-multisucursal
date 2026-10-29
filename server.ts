@@ -128,14 +128,30 @@ app.post('/api/pedidos', (req, res) => {
 app.patch('/api/pedidos/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { estado, detallePago, correlativoFactura } = req.body;
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ success: false, error: 'Datos de actualización inválidos' });
+    }
+
+    const { estado, detallePago, correlativoFactura } = body;
+    const estadosPermitidos = ['pendiente', 'confirmado', 'preparando', 'despachado', 'entregado', 'cancelado'];
+    if (estado !== undefined && !estadosPermitidos.includes(estado)) {
+      return res.status(400).json({ success: false, error: 'Estado de pedido no válido' });
+    }
+    if (detallePago !== undefined && (!detallePago || typeof detallePago !== 'object' || Array.isArray(detallePago))) {
+      return res.status(400).json({ success: false, error: 'Detalle de pago inválido' });
+    }
+    if (correlativoFactura !== undefined && typeof correlativoFactura !== 'string' && typeof correlativoFactura !== 'number') {
+      return res.status(400).json({ success: false, error: 'Número de factura inválido' });
+    }
+
     const db = readServerDb();
     if (!Array.isArray(db.pedidos)) db.pedidos = [];
     const index = db.pedidos.findIndex((p: any) => p.id === id);
     if (index >= 0) {
-      if (estado) db.pedidos[index].estado = estado;
-      if (detallePago) db.pedidos[index].detallePago = detallePago;
-      if (correlativoFactura) db.pedidos[index].correlativoFactura = correlativoFactura;
+      if (estado !== undefined) db.pedidos[index].estado = estado;
+      if (detallePago !== undefined) db.pedidos[index].detallePago = detallePago;
+      if (correlativoFactura !== undefined) db.pedidos[index].correlativoFactura = correlativoFactura;
       saveServerDb(db);
       return res.json({ success: true, pedido: db.pedidos[index] });
     }
