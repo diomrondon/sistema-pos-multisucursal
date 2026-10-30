@@ -672,7 +672,16 @@ export default function App() {
       })
       .catch((err) => console.warn('Notice fetching initial empresa config:', err));
 
-    // 3. Real-time web orders listener
+    // 3. Real-time product catalog listener. Empty snapshots are meaningful
+    // and must clear stale products on this authenticated administrator session.
+    const unsubProductos = subscribeToProductos(
+      (cloudProducts) => {
+        setProductos(cloudProducts);
+      },
+      (err) => console.warn('Notice subscribing to Firestore products:', err)
+    );
+
+    // 4. Real-time web orders listener
     const unsubOrders = subscribeToPedidosOnline((cloudOrders) => {
       if (cloudOrders && cloudOrders.length > 0) {
         setPedidosOnline((prev) => {
@@ -688,14 +697,14 @@ export default function App() {
       }
     });
 
-    // 4. Real-time exchange rate & company configuration from Firestore (Live sync)
+    // 5. Real-time exchange rate & company configuration from Firestore (Live sync)
     const unsubEmpresa = subscribeToEmpresaConfig((cloudEmpresa) => {
       if (cloudEmpresa) {
         applyEmpresaConfigUpdate(cloudEmpresa);
       }
     });
 
-    // 5. Real-time digital store configuration
+    // 6. Real-time digital store configuration
     const unsubTienda = subscribeToTiendaConfig((cloudTienda) => {
       if (cloudTienda) {
         setTiendaConfig((prev) => ({ ...prev, ...cloudTienda }));
@@ -703,6 +712,7 @@ export default function App() {
     });
 
     return () => {
+      unsubProductos();
       unsubOrders();
       unsubEmpresa();
       unsubTienda();
