@@ -347,7 +347,11 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
     alert(`✅ Factura de Proveedor #${nroFacturaFinal} registrada exitosamente. Se ingresaron los artículos al inventario y se actualizaron los costos y precios de venta.`);
   };
 
-  const filteredCompras = compras.filter(
+  const branchScopedCompras = currentUser?.sucursal_id != null
+    ? compras.filter((c) => c.sucursalId === currentUser.sucursal_id)
+    : compras;
+
+  const filteredCompras = branchScopedCompras.filter(
     (c) =>
       c.proveedorNombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.numeroFactura?.toLowerCase().includes(searchTerm.toLowerCase()) ||
