@@ -12,7 +12,7 @@ import {
   FileCheck,
   CreditCard,
 } from 'lucide-react';
-import { CuentaPorPagar, Proveedor, EmpresaConfig, Usuario } from '../types';
+import { CuentaPorPagar, Proveedor, EmpresaConfig, Usuario, Sucursal } from '../types';
 import { formatUSD, formatBs } from '../lib/currency';
 
 interface CxpManagerProps {
@@ -20,6 +20,7 @@ interface CxpManagerProps {
   proveedores: Proveedor[];
   empresaConfig: EmpresaConfig;
   currentUser: Usuario | null;
+  sucursales: Sucursal[];
   onRegistrarPago: (cxpRegistroId: string, monto: number, metodoPago: string, referencia?: string) => void;
   onNuevaCuentaPagar?: (cxp: Omit<CuentaPorPagar, 'id' | 'pagos'>) => void;
 }
@@ -29,6 +30,7 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
   proveedores,
   empresaConfig,
   currentUser,
+  sucursales,
   onRegistrarPago,
   onNuevaCuentaPagar,
 }) => {
@@ -44,6 +46,7 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
   // Manual new CxP modal
   const [showNewModal, setShowNewModal] = useState(false);
   const [newProvId, setNewProvId] = useState<number>(proveedores[0]?.id || 1);
+  const [newSucursalId, setNewSucursalId] = useState<number>(currentUser?.sucursal_id ?? sucursales[0]?.id ?? 0);
   const [newFactura, setNewFactura] = useState<string>('');
   const [newMonto, setNewMonto] = useState<number>(100);
   const [newDiasCredito, setNewDiasCredito] = useState<number>(30);
@@ -76,6 +79,11 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
   const handleCreateNewCxp = (e: React.FormEvent) => {
     e.preventDefault();
     if (!onNuevaCuentaPagar) return;
+    const sucursalId = currentUser?.sucursal_id ?? newSucursalId;
+    if (!sucursales.some((s) => s.id === sucursalId)) {
+      alert('Selecciona una sucursal válida para esta cuenta.');
+      return;
+    }
     const prov = proveedores.find((p) => p.id === newProvId);
     if (!prov) return;
 
@@ -83,6 +91,7 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
     const fechaVenc = new Date(Date.now() + newDiasCredito * 24 * 3600 * 1000).toISOString();
 
     onNuevaCuentaPagar({
+      sucursalId,
       proveedorId: prov.id,
       proveedorNombre: prov.nombre,
       numeroFactura: newFactura.trim() || `FAC-PROV-${Date.now().toString().slice(-5)}`,
@@ -388,6 +397,15 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
             </div>
 
             <form onSubmit={handleCreateNewCxp} className="p-5 space-y-4">
+              {currentUser?.sucursal_id == null && (
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Sucursal de la cuenta</label>
+                  <select value={newSucursalId} onChange={(e) => setNewSucursalId(Number(e.target.value))} required className="w-full bg-slate-950 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none">
+                    <option value={0} disabled>Selecciona una sucursal</option>
+                    {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="text-[11px] font-semibold text-slate-400 block mb-1">Proveedor</label>
                 <select
