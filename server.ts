@@ -1,0 +1,662 @@
+import 'dotenv/config';
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import { ZipArchive } from 'archiver';
+import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI, Type } from '@google/genai';
+import { applicationDefault, cert, getApps as getAdminApps, initializeApp as initializeAdminApp } from 'firebase-admin/app';
+import { getAuth as getAdminAuth } from 'firebase-admin/auth';
+import { createPrivateKey, createPublicKey, sign as signLicense } from 'node:crypto';
+
+const rootDir = process.cwd();
+
+const app = express();
+const PORT = 3000;
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'composed-keep-9v9wh';
+const ADMIN_EMAIL = 'diomrondon@gmail.com';
+
+function getFirebaseAdminAuth() {
+  if (getAdminApps().length === 0) {
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const credential = serviceAccountJson
+      ? cert(JSON.parse(serviceAccountJson))
+      : applicationDefault();
+    initializeAdminApp({ credential, projectId: FIREBASE_PROJECT_ID });
+  }
+  return getAdminAuth();
+}
+
+
+// Persistent Server JSON Database file
+const DB_DIR = path.join(rootDir, 'data');
+const DB_FILE = path.join(DB_DIR, 'server_db.json');
+
+interface ServerDatabase {
+  pedidos: any[];
+  empresaConfig: any | null;
+  tiendaConfig: any | null;
+  productos: any[] | null;
+  inventario: any[] | null;
+}
+
+function readServerDb(): ServerDatabase {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+
+  if (!fs.existsSync(DB_FILE)) {
+    return {
+      pedidos: [],
+      empresaConfig: null,
+      tiendaConfig: null,
+      productos: null,
+      inventario: null,
+    };
+  }
+
+  // Do not silently replace a damaged database with empty data.
+  const data = fs.readFileSync(DB_FILE, 'utf-8');
+  const parsed: unknown = JSON.parse(data);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('La base de datos del servidor tiene un formato inválido. No se modificó el archivo.');
+  }
+
+  const db = parsed as Partial<ServerDatabase>;
+  return {
+    pedidos: Array.isArray(db.pedidos) ? db.pedidos : [],
+    empresaConfig: db.empresaConfig ?? null,
+    tiendaConfig: db.tiendaConfig ?? null,
+    productos: Array.isArray(db.productos) ? db.productos : null,
+    inventario: Array.isArray(db.inventario) ? db.inventario : null,
+  };
+}
+
+function saveServerDb(db: ServerDatabase): void {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+
+  // Write to a temporary file first, then replace the database atomically.
+  const tempFile = `${DB_FILE}.tmp`;
+  fs.writeFileSync(tempFile, JSON.stringify(db, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  fs.renameSync(tempFile, DB_FILE);
+}
+
+// Public key is safe to publish; it can verify licenses but cannot create them.
+app.get('/api/licenses/public-key', (_req, res) => {
+  try {
+    const privateKeyPem = process.env.LICENSE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    if (!privateKeyPem) {
+      return res.status(503).json({ success: false, error: 'El servicio de licencias aún no está configurado.' });
+    }
+    const publicKey = createPublicKey(createPrivateKey(privateKeyPem))
+      .export({ type: 'spki', format: 'der' })
+      .toString('base64');
+    return res.json({ success: true, publicKey });
+  } catch (error) {
+    console.error('License public key configuration error:', error);
+    return res.status(503).json({ success: false, error: 'No se pudo cargar la configuración de licencias.' });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString() });
+});
+ 
+// Every API route except the health check requires a verified owner Google session.
+// Firebase Admin credentials must be configured on the server; fail closed otherwise.
+app.use('/api', async (req, res, next) => {
+  if (req.path === '/health' || req.path === '/licenses/public-key') return next();
+
+  const authorization = req.header('authorization') || '';
+  const match = authorization.match(/^Bearer (.+)$/i);
+  if (!match) {
+    return res.status(401).json({ success: false, error: 'Debes iniciar sesión para usar este servicio.' });
+  }
+
+  try {
+    const decoded = await getFirebaseAdminAuth().verifyIdToken(match[1]);
+    const email = typeof decoded.email === 'string' ? decoded.email.trim().toLowerCase() : '';
+    if (email !== ADMIN_EMAIL || decoded.email_verified !== true) {
+      return res.status(403).json({ success: false, error: 'Esta cuenta no tiene permisos de administrador.' });
+    }
+    next();
+  } catch (error: any) {
+    console.error('Firebase Admin token verification unavailable or failed:', error);
+    const code = typeof error?.code === 'string' ? error.code : '';
+    if (code.startsWith('auth/')) {
+      return res.status(401).json({ success: false, error: 'La sesión no es válida o ha caducado. Inicia sesión nuevamente.' });
+    }
+    return res.status(503).json({
+      success: false,
+      error: 'La verificación segura de Firebase no está configurada o no está disponible. Contacta al administrador.',
+    });
+  }
+});
+
+// Parse request bodies only after API authentication has succeeded.
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Issue a digitally signed license. This route is protected by the verified administrator middleware above.
+app.post('/api/licenses/issue', (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const validTypes = ['vitalicia', 'anual', 'semestral', 'mensual', 'demo'];
+    const machineId = typeof body.machineId === 'string' ? body.machineId.trim().toUpperCase() : '';
+    const empresa = typeof body.empresa === 'string' ? body.empresa.trim() : '';
+    const rif = typeof body.rif === 'string' ? body.rif.trim().toUpperCase() : '';
+    const tipo = body.tipo;
+    const cajasMax = Number(body.cajasMax);
+    const sucursalesMax = Number(body.sucursalesMax);
+    const fechaVencimiento = body.fechaVencimiento;
+    const fechaEmision = new Date().toISOString().slice(0, 10);
+
+    if (!/^POS-[A-Z0-9-]{8,40}$/.test(machineId) || !empresa || empresa.length > 160 ||
+        rif.length > 40 || !validTypes.includes(tipo) ||
+        !Number.isInteger(cajasMax) || cajasMax < 1 || cajasMax > 100 ||
+        !Number.isInteger(sucursalesMax) || sucursalesMax < 1 || sucursalesMax > 100 ||
+        !(fechaVencimiento === 'VITALICIA' || (typeof fechaVencimiento === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fechaVencimiento)))) {
+      return res.status(400).json({ success: false, error: 'Los datos de la licencia no son válidos.' });
+    }
+    if (fechaVencimiento !== 'VITALICIA' && fechaVencimiento < fechaEmision) {
+      return res.status(400).json({ success: false, error: 'La fecha de vencimiento debe ser hoy o posterior.' });
+    }
+
+    const privateKeyPem = process.env.LICENSE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    if (!privateKeyPem) {
+      return res.status(503).json({ success: false, error: 'Falta configurar la clave privada de licencias en los secretos del servidor.' });
+    }
+
+    const payload = { machineId, empresa, rif, tipo, fechaEmision, fechaVencimiento, cajasMax, sucursalesMax };
+    const payloadEncoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const signature = signLicense('RSA-SHA256', Buffer.from(payloadEncoded, 'utf8'), createPrivateKey(privateKeyPem)).toString('base64url');
+    return res.json({ success: true, licenseKey: `POSLIC1.${payloadEncoded}.${signature}`, license: payload });
+  } catch (error) {
+    console.error('License issuance failed:', error);
+    return res.status(500).json({ success: false, error: 'No se pudo emitir la licencia.' });
+  }
+});
+
+// API: Obtener todos los pedidos web / online
+app.get('/api/pedidos', (req, res) => {
+  try {
+    const db = readServerDb();
+    res.json({ success: true, pedidos: db.pedidos || [] });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Guardar nuevo pedido (creado desde el celular, tablet o laptop)
+app.post('/api/pedidos', (req, res) => {
+  try {
+    const pedido = req.body;
+    if (
+      !pedido ||
+      typeof pedido !== 'object' ||
+      Array.isArray(pedido) ||
+      typeof pedido.id !== 'string' ||
+      !pedido.id.trim() ||
+      typeof pedido.clienteNombre !== 'string' ||
+      !pedido.clienteNombre.trim() ||
+      !Array.isArray(pedido.detalles)
+    ) {
+      return res.status(400).json({ success: false, error: 'Datos de pedido inválidos' });
+    }
+    const db = readServerDb();
+    if (!Array.isArray(db.pedidos)) {
+      db.pedidos = [];
+    }
+    const existingIndex = db.pedidos.findIndex((p: any) => p.id === pedido.id);
+    if (existingIndex >= 0) {
+      const existing = db.pedidos[existingIndex];
+      // A repeated client submission must not roll back POS-managed status/payment fields.
+      db.pedidos[existingIndex] = {
+        ...pedido,
+        estado: existing.estado ?? pedido.estado,
+        ventaIdGenerada: existing.ventaIdGenerada ?? pedido.ventaIdGenerada,
+        detallePago: existing.detallePago ?? pedido.detallePago,
+        correlativoFactura: existing.correlativoFactura ?? pedido.correlativoFactura,
+      };
+    } else {
+      db.pedidos.unshift(pedido);
+    }
+    saveServerDb(db);
+    console.log(`[PEDIDO RECIBIDO] ${pedido.numeroPedido} por ${pedido.clienteNombre} ($${pedido.totalUsd})`);
+    return res.json({ success: true, pedido });
+  } catch (err: any) {
+    console.error('Error al guardar pedido online:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Actualizar estado de pedido (aprobado, en camino, facturado, cancelado)
+app.patch('/api/pedidos/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ success: false, error: 'Datos de actualización inválidos' });
+    }
+
+    const { estado, detallePago, correlativoFactura } = body;
+    const estadosPermitidos = ['pendiente', 'confirmado', 'preparando', 'despachado', 'entregado', 'cancelado'];
+    if (estado !== undefined && !estadosPermitidos.includes(estado)) {
+      return res.status(400).json({ success: false, error: 'Estado de pedido no válido' });
+    }
+    if (detallePago !== undefined && (!detallePago || typeof detallePago !== 'object' || Array.isArray(detallePago))) {
+      return res.status(400).json({ success: false, error: 'Detalle de pago inválido' });
+    }
+    if (correlativoFactura !== undefined && typeof correlativoFactura !== 'string' && typeof correlativoFactura !== 'number') {
+      return res.status(400).json({ success: false, error: 'Número de factura inválido' });
+    }
+
+    const db = readServerDb();
+    if (!Array.isArray(db.pedidos)) db.pedidos = [];
+    const index = db.pedidos.findIndex((p: any) => p.id === id);
+    if (index >= 0) {
+      if (estado !== undefined) db.pedidos[index].estado = estado;
+      if (detallePago !== undefined) db.pedidos[index].detallePago = detallePago;
+      if (correlativoFactura !== undefined) db.pedidos[index].correlativoFactura = correlativoFactura;
+      saveServerDb(db);
+      return res.json({ success: true, pedido: db.pedidos[index] });
+    }
+    return res.status(404).json({ success: false, error: 'Pedido no encontrado' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API: Sincronización de estado general entre dispositivos (productos, tasa, config)
+app.get('/api/sync/state', (req, res) => {
+  try {
+    const db = readServerDb();
+    res.json({
+      success: true,
+      pedidos: db.pedidos || [],
+      empresaConfig: db.empresaConfig || null,
+      tiendaConfig: db.tiendaConfig || null,
+      productos: db.productos || null,
+      inventario: db.inventario || null,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/sync/state', (req, res) => {
+  try {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ success: false, error: 'Datos de sincronización inválidos' });
+    }
+
+    const { empresaConfig, tiendaConfig, productos, inventario, pedidos } = body;
+    if (
+      (empresaConfig !== undefined && empresaConfig !== null &&
+        (typeof empresaConfig !== 'object' || Array.isArray(empresaConfig))) ||
+      (tiendaConfig !== undefined && tiendaConfig !== null &&
+        (typeof tiendaConfig !== 'object' || Array.isArray(tiendaConfig))) ||
+      (productos !== undefined && productos !== null && !Array.isArray(productos)) ||
+      (inventario !== undefined && inventario !== null && !Array.isArray(inventario)) ||
+      (pedidos !== undefined && !Array.isArray(pedidos))
+    ) {
+      return res.status(400).json({ success: false, error: 'La configuración, los productos, el inventario o los pedidos tienen un formato inválido' });
+    }
+
+    const db = readServerDb();
+    if (empresaConfig) db.empresaConfig = empresaConfig;
+    if (tiendaConfig) db.tiendaConfig = tiendaConfig;
+    if (productos) db.productos = productos;
+    if (inventario) db.inventario = inventario;
+    if (Array.isArray(pedidos)) {
+      if (pedidos.some((p: any) =>
+        !p ||
+        typeof p !== 'object' ||
+        Array.isArray(p) ||
+        typeof p.id !== 'string' ||
+        !p.id.trim() ||
+        typeof p.clienteNombre !== 'string' ||
+        !Array.isArray(p.detalles)
+      )) {
+        return res.status(400).json({ success: false, error: 'La lista contiene pedidos inválidos' });
+      }
+
+      const map = new Map<string, any>();
+      (db.pedidos || []).forEach((p: any) => {
+        if (p && typeof p.id === 'string' && p.id.trim()) map.set(p.id, p);
+      });
+
+      pedidos.forEach((incoming: any) => {
+        const existing = map.get(incoming.id);
+        if (!existing) {
+          map.set(incoming.id, incoming);
+          return;
+        }
+
+        // Preserve server/POS-managed fields when an older device syncs stale data.
+        map.set(incoming.id, {
+          ...incoming,
+          estado: existing.estado ?? incoming.estado,
+          ventaIdGenerada: existing.ventaIdGenerada ?? incoming.ventaIdGenerada,
+          detallePago: existing.detallePago ?? incoming.detallePago,
+          correlativoFactura: existing.correlativoFactura ?? incoming.correlativoFactura,
+        });
+      });
+
+      db.pedidos = Array.from(map.values()).sort(
+        (a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime()
+      );
+    }
+    saveServerDb(db);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Download full repository as a .zip file (pure Node.js archiver - 100% environment agnostic)
+app.get('/api/download-zip', (req, res) => {
+  try {
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="sistema-pos-multisucursal.zip"'
+    );
+
+    const archive = new ZipArchive({
+      zlib: { level: 9 },
+    });
+
+    archive.on('error', (err: any) => {
+      console.error('Archiver error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error generating zip: ' + err.message });
+      }
+    });
+
+    archive.pipe(res);
+
+    // Glob all files except dependencies, build outputs, and system caches
+    archive.glob('**/*', {
+      cwd: rootDir,
+      ignore: [
+        'node_modules/**',
+        'dist/**',
+        '.git/**',
+        '.aistudio/**',
+        // Never include environment secrets or local business/customer data in downloads.
+        '.env',
+        '.env.*',
+        '**/.env',
+        '**/.env.*',
+        'data/**',
+        '**/data/**',
+        '**/*.pem',
+        '**/*.key',
+        '**/*.p12',
+        '**/*.pfx',
+        '**/*.zip',
+        '**/*.tar.gz',
+      ],
+      dot: true,
+    });
+
+    archive.finalize();
+  } catch (err: any) {
+    console.error('Error generating zip:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error generating zip: ' + err.message });
+    }
+  }
+});
+
+// Lazy initialization of Gemini client
+let aiClient: GoogleGenAI | null = null;
+function getGenAI(): GoogleGenAI {
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('La variable de entorno GEMINI_API_KEY no está configurada en los Secrets del servidor.');
+    }
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return aiClient;
+}
+
+// Parse invoice image or PDF using Gemini 3.8 Flash
+app.post('/api/compras/parse-invoice', async (req, res) => {
+  try {
+    const { fileBase64, mimeType } = req.body ?? {};
+    const allowedMimeTypes = new Set([
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ]);
+    const maxFileBytes = 10 * 1024 * 1024;
+
+    if (typeof fileBase64 !== 'string' || typeof mimeType !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Debe proporcionar la imagen o archivo PDF en formato base64 y su tipo MIME.',
+      });
+    }
+
+    if (!allowedMimeTypes.has(mimeType.toLowerCase())) {
+      return res.status(415).json({
+        success: false,
+        error: 'Tipo de archivo no permitido. Use PDF, JPG, PNG o WEBP.',
+      });
+    }
+
+    // Clean base64 string if it contains a data URI prefix.
+    const cleanBase64 = fileBase64.includes(',') ? fileBase64.slice(fileBase64.indexOf(',') + 1) : fileBase64;
+    const normalizedBase64 = cleanBase64.replace(/\s/g, '');
+    const maxBase64Length = Math.ceil(maxFileBytes / 3) * 4;
+
+    if (
+      normalizedBase64.length === 0 ||
+      normalizedBase64.length > maxBase64Length ||
+      normalizedBase64.length % 4 !== 0 ||
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(normalizedBase64)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'El archivo está vacío, es demasiado grande o no tiene un formato base64 válido.',
+      });
+    }
+
+    const decodedBytes = Buffer.from(normalizedBase64, 'base64');
+    if (decodedBytes.length === 0 || decodedBytes.length > maxFileBytes) {
+      return res.status(413).json({
+        success: false,
+        error: 'El archivo supera el límite permitido de 10 MB.',
+      });
+    }
+
+    const ai = getGenAI();
+
+    const filePart = {
+      inlineData: {
+        data: normalizedBase64,
+        mimeType: mimeType.toLowerCase(),
+      },
+    };
+
+    const promptText = `
+Eres un asistente contable y administrativo de alta precisión especializado en facturas comerciales y notas de entrega de proveedores (incluyendo facturación venezolana con IVA 16%, exentos (E), gravados (G), RIF, número de control, y códigos de barra).
+
+Analiza detalladamente este documento (imagen o archivo PDF de factura de proveedor) y extrae de forma estructurada:
+1. Nombre o razón social del proveedor emisor (proveedorNombre).
+2. RIF o identificación fiscal del proveedor (proveedorRif), ej: J-12345678-0 o V-12345678.
+3. Número de factura (numeroFactura), correlativo o folio (ej: FAC-00984, 0001234).
+4. Número de control (numeroControl) si está presente.
+5. Fecha de emisión (fechaFactura) en formato YYYY-MM-DD. Si no tiene año, asume el año actual.
+6. Condición de pago (condicionPago): 'contado' o 'credito'.
+7. Lista completa de renglones o productos facturados (items):
+   - codigo_barras: Código de barra numérico, SKU o código de producto impreso. Si no tiene, déjalo como cadena vacía "".
+   - descripcion: Nombre completo, marca o descripción del producto.
+   - unidad_medida: Presentación ('UND' para unidades/piezas, 'KG' para kilogramos/peso, 'L' para litros, 'PQ' para paquetes/bultos).
+   - cantidad: Cantidad adquirida numérica (soporta decimales ej: 0.500, 1.250).
+   - precio_unitario: Costo unitario antes o con descuento (en USD o moneda base).
+   - subtotal: Subtotal del renglón (cantidad * precio_unitario).
+   - exento: booleano (true si el producto está marcado como exento de IVA o tasa 0%, false si está gravado con IVA 16%).
+8. Totales de la factura:
+   - subtotalNeto: suma de subtotales de todos los renglones.
+   - baseImponible: monto sujeto al 16% de IVA.
+   - montoExento: monto total exento de IVA (tasa 0%).
+   - totalIva: monto total de impuesto IVA (16%).
+   - totalFactura: monto total final a pagar de la factura.
+
+Asegúrate de que los cálculos numéricos sean consistentes. Extrae todos los renglones posibles con fidelidad.
+`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: {
+        parts: [
+          filePart,
+          { text: promptText },
+        ],
+      },
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            proveedorNombre: {
+              type: Type.STRING,
+              description: 'Nombre o razón social del proveedor emisor',
+            },
+            proveedorRif: {
+              type: Type.STRING,
+              description: 'RIF o número fiscal del proveedor',
+            },
+            numeroFactura: {
+              type: Type.STRING,
+              description: 'Número de factura o serie',
+            },
+            numeroControl: {
+              type: Type.STRING,
+              description: 'Número de control fiscal si existe',
+            },
+            fechaFactura: {
+              type: Type.STRING,
+              description: 'Fecha de emisión en formato YYYY-MM-DD',
+            },
+            condicionPago: {
+              type: Type.STRING,
+              description: 'Condición de pago: contado o credito',
+            },
+            items: {
+              type: Type.ARRAY,
+              description: 'Renglones o productos de la factura',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  codigo_barras: {
+                    type: Type.STRING,
+                    description: 'Código de barras o SKU',
+                  },
+                  descripcion: {
+                    type: Type.STRING,
+                    description: 'Descripción detallada del producto',
+                  },
+                  unidad_medida: {
+                    type: Type.STRING,
+                    description: 'Unidad de medida: UND, KG, L, PQ',
+                  },
+                  cantidad: {
+                    type: Type.NUMBER,
+                    description: 'Cantidad numérica facturada',
+                  },
+                  precio_unitario: {
+                    type: Type.NUMBER,
+                    description: 'Costo unitario del producto',
+                  },
+                  subtotal: {
+                    type: Type.NUMBER,
+                    description: 'Subtotal del producto',
+                  },
+                  exento: {
+                    type: Type.BOOLEAN,
+                    description: 'true si es exento de IVA, false si es gravado con IVA 16%',
+                  },
+                },
+                required: ['descripcion', 'cantidad', 'precio_unitario', 'subtotal', 'exento'],
+              },
+            },
+            subtotalNeto: {
+              type: Type.NUMBER,
+              description: 'Subtotal neto de la factura',
+            },
+            baseImponible: {
+              type: Type.NUMBER,
+              description: 'Base imponible para IVA 16%',
+            },
+            montoExento: {
+              type: Type.NUMBER,
+              description: 'Monto total exento de IVA',
+            },
+            totalIva: {
+              type: Type.NUMBER,
+              description: 'Total monto de IVA 16%',
+            },
+            totalFactura: {
+              type: Type.NUMBER,
+              description: 'Total final a pagar de la factura',
+            },
+          },
+          required: ['proveedorNombre', 'numeroFactura', 'items', 'totalFactura'],
+        },
+      },
+    });
+
+    const rawJson = response.text;
+    if (!rawJson) {
+      throw new Error('El modelo no devolvió una respuesta de texto con el formato esperado.');
+    }
+
+    const parsedData = JSON.parse(rawJson.trim());
+    return res.json({
+      success: true,
+      data: parsedData,
+    });
+  } catch (error: any) {
+    console.error('Error processing invoice with Gemini:', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Error al procesar y extraer los datos de la factura.',
+    });
+  }
+});
+
+// Vite middleware setup
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();
