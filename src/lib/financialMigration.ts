@@ -44,6 +44,8 @@ export interface MigrationFinding {
   idInterno: number;
   registroId?: string;
   estado: 'conservar' | 'asociacion_segura' | 'revision_manual';
+  identidad: 'conservar' | 'asignar_nueva' | 'revision_manual';
+  asociacion: 'segura' | 'revision_manual' | 'no_aplica';
   sucursalId?: number;
   referencia?: string;
   motivo: string;
@@ -70,6 +72,8 @@ export function analyzeFinancialMigration(input: FinancialMigrationInput): Finan
     findings.push({
       tipo: 'venta', idInterno: sale.id, registroId: sale.registroId, sucursalId: sale.sucursal_id,
       estado: hasStableId(sale.registroId) ? 'conservar' : unique ? 'asociacion_segura' : 'revision_manual',
+      identidad: hasStableId(sale.registroId) ? 'conservar' : unique ? 'asignar_nueva' : 'revision_manual',
+      asociacion: 'no_aplica',
       motivo: hasStableId(sale.registroId) ? 'Ya tiene identificador estable.' :
         unique ? 'La combinación sucursal + número interno identifica una sola venta; se puede asignar un identificador nuevo en una migración posterior.' :
         'Hay más de una venta con la misma sucursal y número interno.',
@@ -80,6 +84,8 @@ export function analyzeFinancialMigration(input: FinancialMigrationInput): Finan
     findings.push({
       tipo: 'compra', idInterno: purchase.id, registroId: purchase.registroId, sucursalId: purchase.sucursalId,
       estado: hasStableId(purchase.registroId) ? 'conservar' : unique ? 'asociacion_segura' : 'revision_manual',
+      identidad: hasStableId(purchase.registroId) ? 'conservar' : unique ? 'asignar_nueva' : 'revision_manual',
+      asociacion: 'no_aplica',
       motivo: hasStableId(purchase.registroId) ? 'Ya tiene identificador estable.' :
         unique ? 'La combinación sucursal + número interno identifica una sola compra.' :
         'Hay más de una compra con la misma sucursal y número interno.',
@@ -91,10 +97,13 @@ export function analyzeFinancialMigration(input: FinancialMigrationInput): Finan
       sale.id === account.ventaId && (account.sucursalId == null || sale.sucursal_id === account.sucursalId));
     const linkedBranch = account.sucursalId ?? (matches.length === 1 ? matches[0].sucursal_id : undefined);
     const safe = matches.length === 1 && branchKeyCounts.get(`venta:${matches[0].sucursal_id}:${matches[0].id}`) === 1;
-    const state = hasStableId(account.registroId) ? 'conservar' : safe ? 'asociacion_segura' : 'revision_manual';
+    const identity = hasStableId(account.registroId) ? 'conservar' : 'asignar_nueva';
+    const state = !safe ? 'revision_manual' : hasStableId(account.registroId) ? 'conservar' : 'asociacion_segura';
     findings.push({
       tipo: 'cxc', idInterno: account.id, registroId: account.registroId, sucursalId: linkedBranch,
       estado: state,
+      identidad: identity,
+      asociacion: safe ? 'segura' : 'revision_manual',
       referencia: matches.length === 1 ? `venta #${matches[0].id}` : undefined,
       motivo: hasStableId(account.registroId) ? 'La cuenta ya tiene identificador estable.' :
         safe ? 'Existe exactamente una venta coincidente dentro de la sucursal.' :
@@ -104,7 +113,9 @@ export function analyzeFinancialMigration(input: FinancialMigrationInput): Finan
     });
     (account.abonos || []).forEach((movement) => findings.push({
       tipo: 'abono', idInterno: movement.id, registroId: movement.registroId, sucursalId: linkedBranch,
-      estado: hasStableId(movement.registroId) ? 'conservar' : safe ? 'asociacion_segura' : 'revision_manual',
+      estado: !safe ? 'revision_manual' : hasStableId(movement.registroId) ? 'conservar' : 'asociacion_segura',
+      identidad: hasStableId(movement.registroId) ? 'conservar' : 'asignar_nueva',
+      asociacion: safe ? 'segura' : 'revision_manual',
       motivo: hasStableId(movement.registroId) ? 'El abono ya tiene identificador estable.' :
         safe ? 'Puede recibir identificador nuevo ligado a la cuenta identificada de forma única.' :
         'No se debe migrar el abono hasta aclarar la cuenta y su sucursal.',
@@ -125,7 +136,9 @@ export function analyzeFinancialMigration(input: FinancialMigrationInput): Finan
     const linkedBranch = account.sucursalId ?? (safe ? matches[0].sucursalId : undefined);
     findings.push({
       tipo: 'cxp', idInterno: account.id, registroId: account.registroId, sucursalId: linkedBranch,
-      estado: hasStableId(account.registroId) ? 'conservar' : safe ? 'asociacion_segura' : 'revision_manual',
+      estado: !safe ? 'revision_manual' : hasStableId(account.registroId) ? 'conservar' : 'asociacion_segura',
+      identidad: hasStableId(account.registroId) ? 'conservar' : 'asignar_nueva',
+      asociacion: safe ? 'segura' : 'revision_manual',
       referencia: safe ? `compra #${matches[0].id} / ${matches[0].numeroFactura || 'sin factura'}` : undefined,
       motivo: hasStableId(account.registroId) ? 'La cuenta ya tiene identificador estable.' :
         safe ? 'Coinciden de forma única proveedor, factura o referencia interna y sucursal.' :
