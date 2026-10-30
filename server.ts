@@ -42,7 +42,7 @@ function isValidPedido(p: any): boolean {
   const limits: Record<string, number> = { numeroPedido: 80, fecha: 40, clienteRif: 40, clienteTelefono: 40, clienteEmail: 254, sucursalNombre: 160, direccionEntrega: 500, puntoReferencia: 500, referenciaPago: 120, bancoOrigen: 120, notas: 500, metodoPago: 40, tipoEntrega: 20, estado: 30, creadoEn: 40 };
   for (const [key, max] of Object.entries(limits)) if (p[key] !== undefined && (typeof p[key] !== 'string' || p[key].length > max)) return false;
   for (const key of ['costoDelivery','subtotalNeto','baseImponible','montoExento','montoIva','total','totalBs','tasaCambio']) if (p[key] !== undefined && (!Number.isFinite(p[key]) || p[key] < 0 || p[key] > 1000000000)) return false;
-  return p.detalles.every((d: any) => d && typeof d === 'object' && !Array.isArray(d) && typeof d.nombre === 'string' && d.nombre.trim().length > 0 && d.nombre.length <= 200 && Number.isFinite(d.cantidad) && d.cantidad > 0 && d.cantidad <= 100000 && Number.isFinite(d.precioUnitario) && d.precioUnitario >= 0 && d.precioUnitario <= 100000000 && Number.isFinite(d.subtotal) && d.subtotal >= 0 && d.subtotal <= 100000000);
+  return p.detalles.every((d: any) => d && typeof d === 'object' && !Array.isArray(d) && typeof d.productoNombre === 'string' && d.productoNombre.trim().length > 0 && d.productoNombre.length <= 200 && Number.isFinite(d.cantidad) && d.cantidad > 0 && d.cantidad <= 100000 && Number.isFinite(d.precioUnitario) && d.precioUnitario >= 0 && d.precioUnitario <= 100000000 && Number.isFinite(d.subtotal) && d.subtotal >= 0 && d.subtotal <= 100000000);
 }
 
 interface ServerDatabase {
