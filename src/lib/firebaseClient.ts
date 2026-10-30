@@ -277,28 +277,54 @@ export async function syncAllToFirestore({
   inventario: InventarioItem[];
 }): Promise<{ success: boolean; count: number; error?: string }> {
   try {
-    // 1. Sync Empresa & Tienda config
-    await saveEmpresaConfigToFirestore(empresaConfig);
-    await saveTiendaConfigToFirestore(tiendaConfig);
-
-    // 2. Batch write products
-    const batch = writeBatch(db);
-    let count = 0;
+    // Firestore permite como máximo 500 operaciones por lote. Usamos 450
+    // para mantener un margen y no perder catálogos grandes por ese límite.
+    const BATCH_SIZE = 450;
+    const writes: Array<{ collectionName: string; documentId: string; data: unknown }> = [];
 
     for (const prod of productos) {
-      const prodRef = doc(db, 'productos', String(prod.id));
-      batch.set(prodRef, prod, { merge: true });
-      count++;
+      if (!Number.isSafeInteger(prod.id) || prod.id < 0) {
+        throw new Error('Hay un producto con identificador inválido. No se inició la sincronización.');
+      }
+      writes.push({ collectionName: 'productos', documentId: String(prod.id), data: prod });
     }
 
-    // 3. Batch write sucursales
     for (const suc of sucursales) {
-      const sucRef = doc(db, 'sucursales', String(suc.id));
-      batch.set(sucRef, suc, { merge: true });
+      if (!Number.isSafeInteger(suc.id) || suc.id < 0) {
+        throw new Error('Hay una sucursal con identificador inválido. No se inició la sincronización.');
+      }
+      writes.push({ collectionName: 'sucursales', documentId: String(suc.id), data: suc });
     }
 
-    await batch.commit();
-    return { success: true, count };
+    for (const item of inventario) {
+      if (!Number.isSafeInteger(item.sucursal_id) || item.sucursal_id < 0 ||
+          !Number.isSafeInteger(item.producto_id) || item.producto_id < 0 ||
+          !Number.isFinite(item.stock) || item.stock < 0) {
+        throw new Error('Hay un registro de inventario inválido. No se inició la sincronización.');
+      }
+      writes.push({
+        collectionName: 'inventario',
+        documentId: `${item.sucursal_id}_${item.producto_id}`,
+        data: item,
+      });
+    }
+
+    // Comprobar todas las escrituras de configuración antes de informar éxito.
+    const companySaved = await saveEmpresaConfigToFirestore(empresaConfig);
+    if (!companySaved) throw new Error('No se pudo guardar la configuración de la empresa.');
+    const storeSaved = await saveTiendaConfigToFirestore(tiendaConfig);
+    if (!storeSaved) throw new Error('No se pudo guardar la configuración de la tienda.');
+
+    for (let offset = 0; offset < writes.length; offset += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      const chunk = writes.slice(offset, offset + BATCH_SIZE);
+      for (const item of chunk) {
+        batch.set(doc(db, item.collectionName, item.documentId), item.data, { merge: true });
+      }
+      await batch.commit();
+    }
+
+    return { success: true, count: productos.length };
   } catch (err: any) {
     console.error('Error syncing all to Firestore:', err);
     return { success: false, count: 0, error: err?.message || String(err) };
