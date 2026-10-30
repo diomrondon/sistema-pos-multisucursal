@@ -150,14 +150,24 @@ app.post('/api/licenses/issue', (req, res) => {
     const fechaVencimiento = body.fechaVencimiento;
     const fechaEmision = new Date().toISOString().slice(0, 10);
 
+    const isRealIsoDate = (value: unknown): value is string => {
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const parsed = new Date(value + 'T00:00:00.000Z');
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    };
+    const isLifetime = tipo === 'vitalicia';
+    const validExpiry = isLifetime
+      ? fechaVencimiento === 'VITALICIA'
+      : isRealIsoDate(fechaVencimiento);
+
     if (!/^POS-[A-Z0-9-]{8,40}$/.test(machineId) || !empresa || empresa.length > 160 ||
         rif.length > 40 || !validTypes.includes(tipo) ||
         !Number.isInteger(cajasMax) || cajasMax < 1 || cajasMax > 100 ||
         !Number.isInteger(sucursalesMax) || sucursalesMax < 1 || sucursalesMax > 100 ||
-        !(fechaVencimiento === 'VITALICIA' || (typeof fechaVencimiento === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fechaVencimiento)))) {
+        !validExpiry) {
       return res.status(400).json({ success: false, error: 'Los datos de la licencia no son válidos.' });
     }
-    if (fechaVencimiento !== 'VITALICIA' && fechaVencimiento < fechaEmision) {
+    if (!isLifetime && fechaVencimiento < fechaEmision) {
       return res.status(400).json({ success: false, error: 'La fecha de vencimiento debe ser hoy o posterior.' });
     }
 
