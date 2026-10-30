@@ -241,13 +241,19 @@ export function subscribeToProductos(
     return onSnapshot(
       colRef,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const prods: Producto[] = [];
-          snapshot.forEach((d) => {
-            prods.push(d.data() as Producto);
+        // Un snapshot vacío también es un cambio válido: permite reflejar
+        // que el catálogo fue vaciado intencionalmente en la nube.
+        const prods: Producto[] = [];
+        snapshot.forEach((d) => {
+          const product = d.data() as Producto;
+          // El ID del documento es la fuente de respaldo si el campo id falta.
+          const documentId = Number(d.id);
+          prods.push({
+            ...product,
+            id: Number.isSafeInteger(product.id) ? product.id : documentId,
           });
-          onProductosUpdated(prods);
-        }
+        });
+        onProductosUpdated(prods);
       },
       (err) => {
         console.warn('Firestore productos notice:', err);
