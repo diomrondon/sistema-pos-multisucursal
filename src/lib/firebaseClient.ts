@@ -437,8 +437,6 @@ export async function syncAllToFirestore({
     const financialCollections: Array<{ name: string; records: Array<{ registroId?: string }> }> = [
       { name: 'ventas', records: ventas || [] },
       { name: 'compras', records: compras || [] },
-      { name: 'clientes', records: clientes || [] },
-      { name: 'proveedores', records: proveedores || [] },
       { name: 'cuentas_por_cobrar', records: cxc || [] },
       { name: 'cuentas_por_pagar', records: cxp || [] },
     ];
@@ -536,8 +534,6 @@ export async function fetchAllFromFirestore(): Promise<{
     const financialCollections = [
       { collectionName: 'ventas', resultKey: 'ventas' },
       { collectionName: 'compras', resultKey: 'compras' },
-      { collectionName: 'clientes', resultKey: 'clientes' },
-      { collectionName: 'proveedores', resultKey: 'proveedores' },
       { collectionName: 'cuentas_por_cobrar', resultKey: 'cxc' },
       { collectionName: 'cuentas_por_pagar', resultKey: 'cxp' },
     ] as const;
