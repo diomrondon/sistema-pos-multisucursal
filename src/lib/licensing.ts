@@ -46,9 +46,32 @@ export async function validateActivationKey(key: string, targetMachineId?: strin
         !Number.isInteger(payload.cajasMax) || !Number.isInteger(payload.sucursalesMax)) {
       return fail('Los datos de la licencia no son válidos.');
     }
-    const response = await fetch('/api/licenses/public-key');
-    if (!response.ok) return fail('No está disponible el verificador de licencias. Inténtelo más tarde.');
-    const { publicKey } = await response.json();
+    // La clave pública no es secreta. Se conserva localmente para poder
+    // comprobar la firma de la licencia cuando el equipo esté sin internet.
+    const cachedPublicKeyName = 'pos_license_public_key_v1';
+    let publicKey = '';
+    try {
+      const response = await fetch('/api/licenses/public-key');
+      if (response.ok) {
+        const body = await response.json();
+        if (typeof body?.publicKey === 'string' && body.publicKey.length > 100) {
+          publicKey = body.publicKey;
+          localStorage.setItem(cachedPublicKeyName, publicKey);
+        }
+      }
+    } catch {
+      // Sin conexión: intentar con la clave pública guardada en una verificación anterior.
+    }
+    if (!publicKey) {
+      try {
+        publicKey = localStorage.getItem(cachedPublicKeyName) || '';
+      } catch {
+        publicKey = '';
+      }
+    }
+    if (!publicKey) {
+      return fail('No hay conexión y este equipo todavía no tiene guardada la clave pública para verificar la licencia. Conéctese una vez a internet.');
+    }
     const keyBytes = decode(publicKey);
     const cryptoKey = await crypto.subtle.importKey('spki', keyBytes, {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'}, false, ['verify']);
     const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, signature, new TextEncoder().encode(parts[1]));
