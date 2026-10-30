@@ -1993,6 +1993,12 @@ const STORAGE_KEYS = {
                     tiendaConfig={tiendaConfig}
                     sucursales={sucursales}
                     inventario={inventario}
+                    ventas={ventas}
+                    compras={compras}
+                    clientes={clientes}
+                    proveedores={proveedores}
+                    cxc={cxcList}
+                    cxp={cxpList}
                     onDataLoadedFromCloud={(data) => {
                       if (data.productos && data.productos.length > 0) setProductos(data.productos);
                       if (data.empresaConfig) applyEmpresaConfigUpdate(data.empresaConfig);
@@ -2005,6 +2011,12 @@ const STORAGE_KEYS = {
                         setInventario(data.inventario);
                         try { localStorage.setItem(STORAGE_KEYS.inventario, JSON.stringify(data.inventario)); } catch (e) {}
                       }
+                      if (data.ventas && data.ventas.length > 0) setVentas(data.ventas);
+                      if (data.compras && data.compras.length > 0) setCompras(data.compras);
+                      if (data.clientes && data.clientes.length > 0) setClientes(data.clientes);
+                      if (data.proveedores && data.proveedores.length > 0) setProveedores(data.proveedores);
+                      if (data.cxc && data.cxc.length > 0) setCxcList(data.cxc);
+                      if (data.cxp && data.cxp.length > 0) setCxpList(data.cxp);
                     }}
                   />
                 </>
