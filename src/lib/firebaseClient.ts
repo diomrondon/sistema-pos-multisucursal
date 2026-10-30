@@ -244,15 +244,30 @@ export function subscribeToProductos(
         // Un snapshot vacío también es un cambio válido: permite reflejar
         // que el catálogo fue vaciado intencionalmente en la nube.
         const prods: Producto[] = [];
+        const seenIds = new Set<number>();
+
         snapshot.forEach((d) => {
-          const product = d.data() as Producto;
-          // El ID del documento es la fuente de respaldo si el campo id falta.
+          const product = d.data() as Partial<Producto>;
+          // Algunos documentos antiguos pueden no tener el campo id.
           const documentId = Number(d.id);
+          const resolvedId =
+            Number.isSafeInteger(product.id) && Number(product.id) >= 0
+              ? Number(product.id)
+              : documentId;
+
+          // No permitir IDs inválidos ni duplicados en el estado de React.
+          if (!Number.isSafeInteger(resolvedId) || resolvedId < 0 || seenIds.has(resolvedId)) {
+            console.warn(`Se omitió un producto de Firestore con ID inválido o duplicado: ${d.id}`);
+            return;
+          }
+
+          seenIds.add(resolvedId);
           prods.push({
             ...product,
-            id: Number.isSafeInteger(product.id) ? product.id : documentId,
-          });
+            id: resolvedId,
+          } as Producto);
         });
+
         onProductosUpdated(prods);
       },
       (err) => {
