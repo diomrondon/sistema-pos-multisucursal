@@ -1195,12 +1195,13 @@ const STORAGE_KEYS = {
   };
 
   // Handler: Register CxC Abono (payment from client)
-  const handleRegistrarAbonoCxc = (cxcId: number, monto: number, metodo: string, referencia?: string) => {
-    const targetCxc = cxcList.find((c) => c.id === cxcId);
+  const handleRegistrarAbonoCxc = (cxcRegistroId: string, monto: number, metodo: string, referencia?: string) => {
+    const targetCxc = cxcList.find((c) => c.registroId === cxcRegistroId);
+    if (!targetCxc) return;
 
     setCxcList((prev) =>
       prev.map((item) => {
-        if (item.id === cxcId) {
+        if (item.registroId === cxcRegistroId) {
           const nuevoSaldo = Math.max(0, item.saldoRestante - monto);
           const nuevoEstado = nuevoSaldo === 0 ? 'pagada' : 'parcial';
           const newAbono = {
@@ -1272,12 +1273,13 @@ const STORAGE_KEYS = {
   };
 
   // Handler: Register CxP Pago (payment to supplier)
-  const handleRegistrarPagoCxp = (cxpId: number, monto: number, metodo: string, referencia?: string) => {
-    const targetCxp = cxpList.find((c) => c.id === cxpId);
+  const handleRegistrarPagoCxp = (cxpRegistroId: string, monto: number, metodo: string, referencia?: string) => {
+    const targetCxp = cxpList.find((c) => c.registroId === cxpRegistroId);
+    if (!targetCxp) return;
 
     setCxpList((prev) =>
       prev.map((item) => {
-        if (item.id === cxpId) {
+        if (item.registroId === cxpRegistroId) {
           const nuevoSaldo = Math.max(0, item.saldoRestante - monto);
           const nuevoEstado = nuevoSaldo === 0 ? 'pagada' : 'parcial';
           const newPago = {
