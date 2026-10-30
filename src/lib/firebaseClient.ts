@@ -487,6 +487,12 @@ export async function fetchAllFromFirestore(): Promise<{
   sucursales?: Sucursal[];
   inventario?: InventarioItem[];
   pedidos?: PedidoOnline[];
+  ventas?: Venta[];
+  compras?: Compra[];
+  clientes?: Cliente[];
+  proveedores?: Proveedor[];
+  cxc?: CuentaPorCobrar[];
+  cxp?: CuentaPorPagar[];
 } | null> {
   try {
     const result: any = {};
@@ -524,6 +530,21 @@ export async function fetchAllFromFirestore(): Promise<{
       const stockItems: InventarioItem[] = [];
       invSnap.forEach((d) => stockItems.push(d.data() as InventarioItem));
       result.inventario = stockItems;
+    }
+
+    // 6. Fetch financial records using stable Firestore document IDs.
+    const financialCollections = [
+      { collectionName: 'ventas', resultKey: 'ventas' },
+      { collectionName: 'compras', resultKey: 'compras' },
+      { collectionName: 'clientes', resultKey: 'clientes' },
+      { collectionName: 'proveedores', resultKey: 'proveedores' },
+      { collectionName: 'cuentas_por_cobrar', resultKey: 'cxc' },
+      { collectionName: 'cuentas_por_pagar', resultKey: 'cxp' },
+    ] as const;
+    for (const item of financialCollections) {
+      const snapshot = await getDocs(collection(db, item.collectionName));
+      const records = snapshot.docs.map((entry) => ({ ...entry.data(), registroId: entry.id }));
+      result[item.resultKey] = records;
     }
 
     // 5. Fetch pedidos_online
