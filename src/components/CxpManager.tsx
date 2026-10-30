@@ -104,8 +104,8 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
     return matchesSearch && matchesStatus;
   });
 
-  const totalPorPagar = cxpList.reduce((acc, c) => acc + (c.estado !== 'pagada' ? c.saldoRestante : 0), 0);
-  const totalPagado = cxpList.reduce((acc, c) => {
+  const totalPorPagar = branchScopedCxp.reduce((acc, c) => acc + (c.estado !== 'pagada' ? c.saldoRestante : 0), 0);
+  const totalPagado = branchScopedCxp.reduce((acc, c) => {
     const totalAbonado = c.pagos.reduce((pAcc, p) => pAcc + p.monto, 0);
     return acc + totalAbonado;
   }, 0);
