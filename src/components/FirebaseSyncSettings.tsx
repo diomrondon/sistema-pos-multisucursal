@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Database, CheckCircle, AlertCircle, RefreshCw, Cloud, CloudCheck, Flame, ShieldCheck, ArrowUpRight, ArrowDownRight, Layers } from 'lucide-react';
 import { testFirestoreConnection, syncAllToFirestore, fetchAllFromFirestore, firebaseConfig } from '../lib/firebaseClient';
-import { Producto, EmpresaConfig, TiendaConfig, Sucursal, InventarioItem } from '../types';
+import { Producto, EmpresaConfig, TiendaConfig, Sucursal, InventarioItem, Venta, Compra, Cliente, Proveedor, CuentaPorCobrar, CuentaPorPagar } from '../types';
 
 interface FirebaseSyncSettingsProps {
   productos: Producto[];
@@ -9,8 +9,14 @@ interface FirebaseSyncSettingsProps {
   tiendaConfig: TiendaConfig;
   sucursales: Sucursal[];
   inventario: InventarioItem[];
+  ventas: Venta[];
+  compras: Compra[];
+  clientes: Cliente[];
+  proveedores: Proveedor[];
+  cxc: CuentaPorCobrar[];
+  cxp: CuentaPorPagar[];
   onRefreshData?: () => void;
-  onDataLoadedFromCloud?: (data: { productos?: Producto[]; empresaConfig?: EmpresaConfig; tiendaConfig?: TiendaConfig; sucursales?: Sucursal[]; inventario?: InventarioItem[] }) => void;
+  onDataLoadedFromCloud?: (data: { productos?: Producto[]; empresaConfig?: EmpresaConfig; tiendaConfig?: TiendaConfig; sucursales?: Sucursal[]; inventario?: InventarioItem[]; ventas?: Venta[]; compras?: Compra[]; clientes?: Cliente[]; proveedores?: Proveedor[]; cxc?: CuentaPorCobrar[]; cxp?: CuentaPorPagar[]; ventas?: Venta[]; compras?: Compra[]; clientes?: Cliente[]; proveedores?: Proveedor[]; cxc?: CuentaPorCobrar[]; cxp?: CuentaPorPagar[] }) => void;
 }
 
 export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
@@ -19,6 +25,12 @@ export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
   tiendaConfig,
   sucursales,
   inventario,
+  ventas,
+  compras,
+  clientes,
+  proveedores,
+  cxc,
+  cxp,
   onRefreshData,
   onDataLoadedFromCloud,
 }) => {
@@ -50,7 +62,7 @@ export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
 
   const handleUploadAllToCloud = async () => {
     setIsSyncing(true);
-    setStatusMessage({ text: 'Subiendo catálogo, tasas y configuración a Firestore...', type: 'info' });
+    setStatusMessage({ text: 'Subiendo catálogo, movimientos financieros y configuración a Firestore...', type: 'info' });
     try {
       const res = await syncAllToFirestore({
         productos,
@@ -58,12 +70,18 @@ export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
         tiendaConfig,
         sucursales,
         inventario,
+        ventas,
+        compras,
+        clientes,
+        proveedores,
+        cxc,
+        cxp,
       });
 
       if (res.success) {
         setIsConnected(true);
         setStatusMessage({
-          text: `¡Éxito! Se sincronizaron ${res.count} productos, sucursales, inventario y configuraciones en Firebase Firestore.`,
+          text: `¡Éxito! Se sincronizaron ${res.count} productos y los registros financieros identificados, además de sucursales, inventario y configuraciones en Firebase Firestore.`,
           type: 'success',
         });
         if (onRefreshData) onRefreshData();
@@ -82,7 +100,7 @@ export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
     setStatusMessage({ text: 'Descargando datos actuales desde Firebase Firestore...', type: 'info' });
     try {
       const data = await fetchAllFromFirestore();
-      if (data && (data.productos || data.empresaConfig || data.tiendaConfig || data.sucursales || data.inventario)) {
+      if (data && (data.productos || data.empresaConfig || data.tiendaConfig || data.sucursales || data.inventario || data.ventas || data.compras || data.clientes || data.proveedores || data.cxc || data.cxp)) {
         setIsConnected(true);
         if (onDataLoadedFromCloud) {
           onDataLoadedFromCloud(data);
