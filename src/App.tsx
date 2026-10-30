@@ -61,6 +61,8 @@ import {
   subscribeToTiendaConfig,
   saveTiendaConfigToFirestore,
   subscribeToProductos,
+  subscribeToInventario,
+  replaceInventarioInFirestore,
   auth,
   getAdminAuthHeaders,
 } from './lib/firebaseClient';
@@ -260,6 +262,9 @@ export default function App() {
     } catch (e) {}
     return INITIAL_INVENTARIO;
   });
+
+  // Prevent local stock from being uploaded until the first cloud snapshot arrives.
+  const [inventarioCloudReady, setInventarioCloudReady] = useState<boolean>(false);
 
   const [ventas, setVentas] = useState<Venta[]>(() => {
     try {
@@ -656,6 +661,14 @@ export default function App() {
     );
   };
 
+  // Keep the local stock array aligned with the authoritative Firestore inventory collection.
+  useEffect(() => {
+    if (!currentUser || !inventarioCloudReady) return;
+    replaceInventarioInFirestore(inventario).then((ok) => {
+      if (!ok) console.warn('No se pudo sincronizar el inventario local con Firebase.');
+    });
+  }, [currentUser, inventarioCloudReady, inventario]);
+
   // Firebase Firestore subscriptions are created only after the authorized administrator signs in.
   useEffect(() => {
     if (!currentUser) return;
@@ -679,6 +692,18 @@ export default function App() {
         setProductos(cloudProducts);
       },
       (err) => console.warn('Notice subscribing to Firestore products:', err)
+    );
+
+    // 3b. Real-time inventory listener. Firestore is the source of truth after
+    // the first snapshot, including an intentionally empty inventory collection.
+    const unsubInventario = subscribeToInventario(
+      (cloudInventory) => {
+        setInventario((previous) =>
+          JSON.stringify(previous) === JSON.stringify(cloudInventory) ? previous : cloudInventory
+        );
+        setInventarioCloudReady(true);
+      },
+      (err) => console.warn('Notice subscribing to Firestore inventory:', err)
     );
 
     // 4. Real-time web orders listener
@@ -713,6 +738,7 @@ export default function App() {
 
     return () => {
       unsubProductos();
+      unsubInventario();
       unsubOrders();
       unsubEmpresa();
       unsubTienda();
