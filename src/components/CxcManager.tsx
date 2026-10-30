@@ -94,7 +94,11 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
     setNewConcepto('');
   };
 
-  const filteredList = cxcList.filter((item) => {
+  const branchScopedCxc = currentUser?.sucursal_id != null
+    ? cxcList.filter((item) => item.sucursalId === currentUser.sucursal_id)
+    : cxcList;
+
+  const filteredList = branchScopedCxc.filter((item) => {
     const matchesSearch =
       item.clienteNombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.concepto.toLowerCase().includes(searchTerm.toLowerCase());
