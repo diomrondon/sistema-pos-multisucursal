@@ -124,7 +124,14 @@ export default function App() {
   });
 
   // Persistent LocalStorage State Keys
-  const STORAGE_KEYS = {
+  const createRecordId = (): string => {
+  if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
+    throw new Error('Este navegador no permite generar identificadores seguros. Actualiza el navegador e inténtalo de nuevo.');
+  }
+  return crypto.randomUUID();
+};
+
+const STORAGE_KEYS = {
     ventas: 'pos_app_ventas_v2',
     compras: 'pos_app_compras_v2',
     clientes: 'pos_app_clientes_v2',
@@ -794,6 +801,7 @@ export default function App() {
     });
 
     const nuevaVenta: Venta = {
+      registroId: createRecordId(),
       id: newVentaId,
       sucursal_id: sucursalId,
       usuario_id: currentUser ? currentUser.id : undefined,
@@ -854,6 +862,7 @@ export default function App() {
     const newId = compras.length + 1;
     const newCompra: Compra = {
       ...compraData,
+      registroId: createRecordId(),
       id: newId,
     };
 
@@ -935,6 +944,9 @@ export default function App() {
     const prov = proveedores.find((p) => p.id === compraData.proveedorId);
     if (prov) {
       const newCxp: CuentaPorPagar = {
+        registroId: createRecordId(),
+        sucursalId: compraData.sucursalId,
+        compraRegistroId: newCompra.registroId,
         id: cxpList.length + 1,
         proveedorId: prov.id,
         proveedorNombre: prov.nombre,
@@ -1192,6 +1204,7 @@ export default function App() {
           const nuevoSaldo = Math.max(0, item.saldoRestante - monto);
           const nuevoEstado = nuevoSaldo === 0 ? 'pagada' : 'parcial';
           const newAbono = {
+            registroId: createRecordId(),
             id: item.abonos.length + 1,
             fecha: new Date().toISOString(),
             monto,
@@ -1233,8 +1246,12 @@ export default function App() {
   // Handler: New CxC
   const handleNuevaCxc = (cxcData: Omit<CuentaPorCobrar, 'id' | 'abonos'>) => {
     const newId = cxcList.length + 1;
+    const relatedSale = cxcData.ventaId !== undefined ? ventas.find((v) => v.id === cxcData.ventaId) : undefined;
     const newCxc: CuentaPorCobrar = {
       ...cxcData,
+      registroId: createRecordId(),
+      sucursalId: relatedSale?.sucursal_id ?? currentUser?.sucursal_id ?? undefined,
+      ventaRegistroId: relatedSale?.registroId,
       id: newId,
       abonos: [],
     };
@@ -1264,6 +1281,7 @@ export default function App() {
           const nuevoSaldo = Math.max(0, item.saldoRestante - monto);
           const nuevoEstado = nuevoSaldo === 0 ? 'pagada' : 'parcial';
           const newPago = {
+            registroId: createRecordId(),
             id: item.pagos.length + 1,
             fecha: new Date().toISOString(),
             monto,
@@ -1305,8 +1323,12 @@ export default function App() {
   // Handler: New CxP
   const handleNuevaCxp = (cxpData: Omit<CuentaPorPagar, 'id' | 'pagos'>) => {
     const newId = cxpList.length + 1;
+    const relatedPurchase = cxpData.compraId !== undefined ? compras.find((c) => c.id === cxpData.compraId) : undefined;
     const newCxp: CuentaPorPagar = {
       ...cxpData,
+      registroId: createRecordId(),
+      sucursalId: relatedPurchase?.sucursalId ?? cxpData.sucursalId ?? currentUser?.sucursal_id ?? undefined,
+      compraRegistroId: relatedPurchase?.registroId,
       id: newId,
       pagos: [],
     };
