@@ -13,6 +13,7 @@ import {
   writeBatch,
   getDocs,
   limit,
+  deleteDoc,
 } from 'firebase/firestore';
 import firebaseConfigData from '../../firebase-applet-config.json';
 import { Producto, PedidoOnline, EmpresaConfig, TiendaConfig, Sucursal, InventarioItem, Venta } from '../types';
@@ -278,6 +279,98 @@ export function subscribeToProductos(
   } catch (e: any) {
     console.warn('Error subscribing to productos:', e);
     return () => {};
+  }
+}
+
+
+/**
+ * Real-time listener for stock by branch and product.
+ */
+export function subscribeToInventario(
+  onInventarioUpdated: (items: InventarioItem[]) => void,
+  onError?: (err: Error) => void
+) {
+  try {
+    return onSnapshot(
+      collection(db, 'inventario'),
+      (snapshot) => {
+        const items: InventarioItem[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as Partial<InventarioItem>;
+          const [branchFromId, productFromId] = d.id.split('_').map(Number);
+          const sucursal_id = Number.isSafeInteger(data.sucursal_id) ? Number(data.sucursal_id) : branchFromId;
+          const producto_id = Number.isSafeInteger(data.producto_id) ? Number(data.producto_id) : productFromId;
+          const stock = Number(data.stock);
+
+          if (!Number.isSafeInteger(sucursal_id) || sucursal_id < 0 ||
+              !Number.isSafeInteger(producto_id) || producto_id < 0 ||
+              !Number.isFinite(stock) || stock < 0) {
+            console.warn(`Se omitió un registro de inventario inválido: ${d.id}`);
+            return;
+          }
+
+          items.push({
+            ...(data as InventarioItem),
+            id: Number.isSafeInteger(data.id) ? Number(data.id) : items.length + 1,
+            sucursal_id,
+            producto_id,
+            stock,
+          });
+        });
+        onInventarioUpdated(items);
+      },
+      (err) => {
+        console.warn('Firestore inventario subscription notice:', err);
+        onError?.(err);
+      }
+    );
+  } catch (e: any) {
+    console.warn('Error starting inventario listener:', e);
+    onError?.(e instanceof Error ? e : new Error(String(e)));
+    return () => {};
+  }
+}
+
+/**
+ * Replaces the Firestore stock collection with the current application state.
+ * This intentionally removes remote stock rows no longer present locally.
+ */
+export async function replaceInventarioInFirestore(items: InventarioItem[]): Promise<boolean> {
+  try {
+    const seen = new Set<string>();
+    const desired = items.map((item) => {
+      if (!Number.isSafeInteger(item.sucursal_id) || item.sucursal_id < 0 ||
+          !Number.isSafeInteger(item.producto_id) || item.producto_id < 0 ||
+          !Number.isFinite(item.stock) || item.stock < 0) {
+        throw new Error('Hay un registro de inventario inválido.');
+      }
+      const documentId = `${item.sucursal_id}_${item.producto_id}`;
+      if (seen.has(documentId)) throw new Error('Hay productos duplicados para una misma sucursal en el inventario.');
+      seen.add(documentId);
+      return { documentId, data: item };
+    });
+
+    const existing = await getDocs(collection(db, 'inventario'));
+    const operations: Array<{ type: 'set' | 'delete'; id: string; data?: InventarioItem }> = [];
+    existing.forEach((d) => {
+      if (!seen.has(d.id)) operations.push({ type: 'delete', id: d.id });
+    });
+    desired.forEach((item) => operations.push({ type: 'set', id: item.documentId, data: item.data }));
+
+    const BATCH_SIZE = 450;
+    for (let offset = 0; offset < operations.length; offset += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      operations.slice(offset, offset + BATCH_SIZE).forEach((operation) => {
+        const ref = doc(db, 'inventario', operation.id);
+        if (operation.type === 'delete') batch.delete(ref);
+        else batch.set(ref, operation.data);
+      });
+      await batch.commit();
+    }
+    return true;
+  } catch (error) {
+    console.error('Error replacing inventario in Firestore:', error);
+    return false;
   }
 }
 
