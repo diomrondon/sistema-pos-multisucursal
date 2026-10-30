@@ -106,8 +106,8 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
     return matchesSearch && matchesStatus;
   });
 
-  const totalPorCobrar = cxcList.reduce((acc, c) => acc + (c.estado !== 'pagada' ? c.saldoRestante : 0), 0);
-  const totalCobrado = cxcList.reduce((acc, c) => {
+  const totalPorCobrar = branchScopedCxc.reduce((acc, c) => acc + (c.estado !== 'pagada' ? c.saldoRestante : 0), 0);
+  const totalCobrado = branchScopedCxc.reduce((acc, c) => {
     const totalAbonado = c.abonos.reduce((aAcc, a) => aAcc + a.monto, 0);
     return acc + totalAbonado;
   }, 0);
