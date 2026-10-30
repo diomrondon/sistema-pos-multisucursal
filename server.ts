@@ -133,8 +133,9 @@ app.use('/api', async (req, res, next) => {
 });
 
 // Parse request bodies only after API authentication has succeeded.
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Keep request bodies bounded. Base64 invoice uploads need about 13.4 MB for a 10 MB file.
+app.use(express.json({ limit: '16mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true, parameterLimit: 1000 }));
 
 // Issue a digitally signed license. This route is protected by the verified administrator middleware above.
 app.post('/api/licenses/issue', (req, res) => {
