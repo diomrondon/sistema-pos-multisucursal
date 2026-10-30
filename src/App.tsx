@@ -1248,9 +1248,7 @@ const STORAGE_KEYS = {
   const handleNuevaCxc = (cxcData: Omit<CuentaPorCobrar, 'id' | 'abonos'>) => {
     const newId = cxcList.length + 1;
     const saleCandidates = cxcData.ventaId !== undefined
-      ? ventas.filter((v) => v.id === cxcData.ventaId && (cxcData.sucursalId ?? currentUser?.sucursal_id) != null
-          ? v.sucursal_id === (cxcData.sucursalId ?? currentUser?.sucursal_id)
-          : true)
+      ? ventas.filter((v) => v.id === cxcData.ventaId && ((cxcData.sucursalId ?? currentUser?.sucursal_id) == null || v.sucursal_id === (cxcData.sucursalId ?? currentUser?.sucursal_id)))
       : [];
     const relatedSale = saleCandidates.length === 1 ? saleCandidates[0] : undefined;
     const newCxc: CuentaPorCobrar = {
@@ -1331,9 +1329,7 @@ const STORAGE_KEYS = {
   const handleNuevaCxp = (cxpData: Omit<CuentaPorPagar, 'id' | 'pagos'>) => {
     const newId = cxpList.length + 1;
     const purchaseCandidates = cxpData.compraId !== undefined
-      ? compras.filter((purchase) => purchase.id === cxpData.compraId && (cxpData.sucursalId ?? currentUser?.sucursal_id) != null
-          ? purchase.sucursalId === (cxpData.sucursalId ?? currentUser?.sucursal_id)
-          : true)
+      ? compras.filter((purchase) => purchase.id === cxpData.compraId && ((cxpData.sucursalId ?? currentUser?.sucursal_id) == null || purchase.sucursalId === (cxpData.sucursalId ?? currentUser?.sucursal_id)))
       : [];
     const relatedPurchase = purchaseCandidates.length === 1 ? purchaseCandidates[0] : undefined;
     const newCxp: CuentaPorPagar = {
