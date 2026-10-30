@@ -69,6 +69,8 @@ export interface DetallePagoVenta {
 }
 
 export interface Venta {
+  /** Identificador global e inmutable para sincronización entre dispositivos. */
+  registroId?: string;
   id: number;
   sucursal_id: number;
   usuario_id?: number;
@@ -139,6 +141,8 @@ export interface DetalleCompra {
 }
 
 export interface Compra {
+  /** Identificador global e inmutable para sincronización entre dispositivos. */
+  registroId?: string;
   id: number;
   proveedorId: number;
   proveedorNombre: string;
@@ -159,6 +163,8 @@ export interface Compra {
 }
 
 export interface AbonoCxC {
+  /** Identificador global del movimiento de abono. */
+  registroId?: string;
   id: number;
   fecha: string;
   monto: number; // USD
@@ -168,6 +174,12 @@ export interface AbonoCxC {
 }
 
 export interface CuentaPorCobrar {
+  /** Identificador global de la cuenta. */
+  registroId?: string;
+  /** Sucursal a la que pertenece la factura/cuenta. */
+  sucursalId?: number;
+  /** Referencia estable a la venta, cuando exista. */
+  ventaRegistroId?: string;
   id: number;
   clienteId: number;
   clienteNombre: string;
@@ -182,6 +194,8 @@ export interface CuentaPorCobrar {
 }
 
 export interface PagoCxP {
+  /** Identificador global del movimiento de pago. */
+  registroId?: string;
   id: number;
   fecha: string;
   monto: number; // USD
@@ -191,6 +205,12 @@ export interface PagoCxP {
 }
 
 export interface CuentaPorPagar {
+  /** Identificador global de la cuenta. */
+  registroId?: string;
+  /** Sucursal a la que pertenece la factura/cuenta. */
+  sucursalId?: number;
+  /** Referencia estable a la compra, cuando exista. */
+  compraRegistroId?: string;
   id: number;
   proveedorId: number;
   proveedorNombre: string;
