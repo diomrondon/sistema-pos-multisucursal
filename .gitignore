@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Local server database may contain customer and business data.
+data/server_db.json
+data/server_db.json.tmp
