@@ -1933,6 +1933,14 @@ export default function App() {
                       if (data.productos && data.productos.length > 0) setProductos(data.productos);
                       if (data.empresaConfig) applyEmpresaConfigUpdate(data.empresaConfig);
                       if (data.tiendaConfig) setTiendaConfig(data.tiendaConfig);
+                      if (data.sucursales && data.sucursales.length > 0) {
+                        setSucursales(data.sucursales);
+                        try { localStorage.setItem(STORAGE_KEYS.sucursales, JSON.stringify(data.sucursales)); } catch (e) {}
+                      }
+                      if (data.inventario && data.inventario.length > 0) {
+                        setInventario(data.inventario);
+                        try { localStorage.setItem(STORAGE_KEYS.inventario, JSON.stringify(data.inventario)); } catch (e) {}
+                      }
                     }}
                   />
                 </>
