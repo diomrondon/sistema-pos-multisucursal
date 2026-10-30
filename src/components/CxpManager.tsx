@@ -20,7 +20,7 @@ interface CxpManagerProps {
   proveedores: Proveedor[];
   empresaConfig: EmpresaConfig;
   currentUser: Usuario | null;
-  onRegistrarPago: (cxpId: number, monto: number, metodoPago: string, referencia?: string) => void;
+  onRegistrarPago: (cxpRegistroId: string, monto: number, metodoPago: string, referencia?: string) => void;
   onNuevaCuentaPagar?: (cxp: Omit<CuentaPorPagar, 'id' | 'pagos'>) => void;
 }
 
@@ -49,6 +49,10 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
   const [newDiasCredito, setNewDiasCredito] = useState<number>(30);
 
   const handleOpenPagar = (item: CuentaPorPagar) => {
+    if (!item.registroId) {
+      alert('Esta cuenta antigua no tiene un identificador único. No se puede registrar un pago hasta completar su revisión.');
+      return;
+    }
     setSelectedCxp(item);
     setMontoPago(item.saldoRestante);
     setReferenciaPago('');
@@ -64,7 +68,8 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
       return;
     }
 
-    onRegistrarPago(selectedCxp.id, montoPago, metodoPago, referenciaPago);
+    if (!selectedCxp.registroId) return;
+    onRegistrarPago(selectedCxp.registroId, montoPago, metodoPago, referenciaPago);
     setSelectedCxp(null);
   };
 
