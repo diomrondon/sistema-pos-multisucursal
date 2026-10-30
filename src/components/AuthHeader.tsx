@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ShieldCheck, Lock, LogOut, Store, AlertCircle, Loader2 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from 'firebase/auth';
 import { Usuario, Sucursal } from '../types';
@@ -27,6 +27,19 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
 }) => {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  );
+
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
 
   const handleGoogleLogin = async () => {
     setIsSigningIn(true);
@@ -125,6 +138,13 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
             <Store className="w-3.5 h-3.5" /><span className="hidden sm:inline">Tienda Online</span>
           </button>
         )}
+        <span
+          role="status"
+          title={isOnline ? 'Hay conexión a internet' : 'Sin internet: se pueden usar los datos locales disponibles; la nube no sincroniza'}
+          className={'px-2 py-1 rounded-lg border font-semibold ' + (isOnline ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : 'text-amber-300 border-amber-500/30 bg-amber-500/10')}
+        >
+          {isOnline ? 'En línea' : 'Sin internet'}
+        </span>
         {currentUser ? (
           <button onClick={onLogout} className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-rose-300 border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer">
             <LogOut className="w-3.5 h-3.5" /><span>Cerrar sesión</span>
