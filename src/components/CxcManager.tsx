@@ -22,7 +22,7 @@ interface CxcManagerProps {
   clientes: Cliente[];
   empresaConfig: EmpresaConfig;
   currentUser: Usuario | null;
-  onRegistrarAbono: (cxcId: number, monto: number, metodoPago: string, referencia?: string) => void;
+  onRegistrarAbono: (cxcRegistroId: string, monto: number, metodoPago: string, referencia?: string) => void;
   onNuevaCuentaCobrar?: (cxc: Omit<CuentaPorCobrar, 'id' | 'abonos'>) => void;
 }
 
@@ -51,6 +51,10 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
   const [newDiasCredito, setNewDiasCredito] = useState<number>(15);
 
   const handleOpenAbonar = (item: CuentaPorCobrar) => {
+    if (!item.registroId) {
+      alert('Esta cuenta antigua no tiene un identificador único. No se puede registrar un abono hasta completar su revisión.');
+      return;
+    }
     setSelectedCxc(item);
     setMontoAbono(item.saldoRestante);
     setReferenciaAbono('');
@@ -66,7 +70,8 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
       return;
     }
 
-    onRegistrarAbono(selectedCxc.id, montoAbono, metodoPago, referenciaAbono);
+    if (!selectedCxc.registroId) return;
+    onRegistrarAbono(selectedCxc.registroId, montoAbono, metodoPago, referenciaAbono);
     setSelectedCxc(null);
   };
 
