@@ -2158,6 +2158,7 @@ const STORAGE_KEYS = {
                     clientes={clientes}
                     empresaConfig={empresaConfig}
                     currentUser={currentUser}
+                    sucursales={sucursales}
                     onRegistrarAbono={handleRegistrarAbonoCxc}
                     onNuevaCuentaCobrar={handleNuevaCxc}
                   />
@@ -2170,6 +2171,7 @@ const STORAGE_KEYS = {
                     proveedores={proveedores}
                     empresaConfig={empresaConfig}
                     currentUser={currentUser}
+                    sucursales={sucursales}
                     onRegistrarPago={handleRegistrarPagoCxp}
                     onNuevaCuentaPagar={handleNuevaCxp}
                   />
