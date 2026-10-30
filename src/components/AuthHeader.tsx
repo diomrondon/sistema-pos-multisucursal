@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, LogOut, Store, AlertCircle, Loader2 } from 'lucide-react';
-import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from 'firebase/auth';
 import { Usuario, Sucursal } from '../types';
 import { INITIAL_USUARIOS } from '../data/mockData';
 import { auth } from '../lib/firebaseClient';
@@ -51,8 +51,42 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
       }
       onSelectUser(adminUser);
     } catch (error) {
-      console.error('Error en el inicio de sesión con Google:', error);
-      setAuthError('No se pudo iniciar sesión. Verifica la cuenta de Google e inténtalo nuevamente.');
+      const authFailure = error as { code?: string; message?: string };
+      const errorCode = authFailure?.code || 'auth/unknown';
+      console.error('Error en el inicio de sesión con Google:', {
+        code: errorCode,
+        message: authFailure?.message || String(error),
+        error,
+      });
+
+      // Si el navegador bloquea la ventana emergente, usar redirección en la misma pestaña.
+      if (errorCode === 'auth/popup-blocked') {
+        try {
+          await signInWithRedirect(auth, provider);
+          return;
+        } catch (redirectError) {
+          const redirectFailure = redirectError as { code?: string; message?: string };
+          console.error('Error en el inicio de sesión por redirección:', redirectError);
+          setAuthError(
+            'Google no pudo abrir el acceso (' + (redirectFailure?.code || 'error desconocido') +
+            '). Revisa la conexión y la configuración de Firebase.'
+          );
+          return;
+        }
+      }
+
+      const friendlyMessages: Record<string, string> = {
+        'auth/unauthorized-domain': 'Este dominio no está autorizado en Firebase. Agrega localhost a los dominios autorizados.',
+        'auth/operation-not-allowed': 'El acceso con Google no está habilitado en Firebase Authentication.',
+        'auth/popup-closed-by-user': 'La ventana de Google se cerró antes de terminar el acceso.',
+        'auth/cancelled-popup-request': 'Hay otra solicitud de acceso abierta. Inténtalo una sola vez.',
+        'auth/network-request-failed': 'No hay conexión estable con Google/Firebase. Comprueba internet.',
+        'auth/too-many-requests': 'Google/Firebase bloqueó temporalmente los intentos. Espera un momento.',
+      };
+      setAuthError(
+        (friendlyMessages[errorCode] || 'No se pudo completar el acceso con Google.') +
+        ' Código: ' + errorCode + '.'
+      );
     } finally {
       setIsSigningIn(false);
     }
