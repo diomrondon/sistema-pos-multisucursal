@@ -41,8 +41,14 @@ function isValidPedido(p: any): boolean {
   if (!Array.isArray(p.detalles) || p.detalles.length < 1 || p.detalles.length > MAX_DETALLES_PEDIDO) return false;
   const limits: Record<string, number> = { numeroPedido: 80, fecha: 40, clienteRif: 40, clienteTelefono: 40, clienteEmail: 254, sucursalNombre: 160, direccionEntrega: 500, puntoReferencia: 500, referenciaPago: 120, bancoOrigen: 120, notas: 500, metodoPago: 40, tipoEntrega: 20, estado: 30, creadoEn: 40 };
   for (const [key, max] of Object.entries(limits)) if (p[key] !== undefined && (typeof p[key] !== 'string' || p[key].length > max)) return false;
+  const validDeliveryTypes = ['pickup', 'delivery'];
+  const validPaymentMethods = ['pago_movil', 'zelle', 'efectivo_usd', 'efectivo_bs', 'punto'];
+  const validStatuses = ['pendiente', 'confirmado', 'preparando', 'despachado', 'entregado', 'cancelado'];
+  if (p.tipoEntrega !== undefined && !validDeliveryTypes.includes(p.tipoEntrega)) return false;
+  if (p.metodoPago !== undefined && !validPaymentMethods.includes(p.metodoPago)) return false;
+  if (p.estado !== undefined && !validStatuses.includes(p.estado)) return false;
   for (const key of ['costoDelivery','subtotalNeto','baseImponible','montoExento','montoIva','total','totalBs','tasaCambio']) if (p[key] !== undefined && (!Number.isFinite(p[key]) || p[key] < 0 || p[key] > 1000000000)) return false;
-  return p.detalles.every((d: any) => d && typeof d === 'object' && !Array.isArray(d) && typeof d.productoNombre === 'string' && d.productoNombre.trim().length > 0 && d.productoNombre.length <= 200 && Number.isFinite(d.cantidad) && d.cantidad > 0 && d.cantidad <= 100000 && Number.isFinite(d.precioUnitario) && d.precioUnitario >= 0 && d.precioUnitario <= 100000000 && Number.isFinite(d.subtotal) && d.subtotal >= 0 && d.subtotal <= 100000000);
+  return p.detalles.every((d: any) => d && typeof d === 'object' && !Array.isArray(d) && Number.isSafeInteger(d.productoId) && d.productoId >= 0 && typeof d.productoNombre === 'string' && d.productoNombre.trim().length > 0 && d.productoNombre.length <= 200 && Number.isFinite(d.cantidad) && d.cantidad > 0 && d.cantidad <= 100000 && Number.isFinite(d.precioUnitario) && d.precioUnitario >= 0 && d.precioUnitario <= 100000000 && Number.isFinite(d.subtotal) && d.subtotal >= 0 && d.subtotal <= 100000000 && (d.exentoIva === undefined || typeof d.exentoIva === 'boolean'));
 }
 
 interface ServerDatabase {
@@ -351,6 +357,9 @@ app.post('/api/sync/state', (req, res) => {
         });
       });
 
+      if (map.size > MAX_PEDIDOS) {
+        return res.status(413).json({ success: false, error: 'La sincronización superaría el límite de pedidos almacenados. Reduce el historial enviado o archiva pedidos antiguos antes de sincronizar.' });
+      }
       db.pedidos = Array.from(map.values()).sort(
         (a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime()
       );
