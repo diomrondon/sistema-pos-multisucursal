@@ -698,9 +698,15 @@ export default function App() {
     // the first snapshot, including an intentionally empty inventory collection.
     const unsubInventario = subscribeToInventario(
       (cloudInventory) => {
-        setInventario((previous) =>
-          JSON.stringify(previous) === JSON.stringify(cloudInventory) ? previous : cloudInventory
-        );
+        setInventario((previous) => {
+          const sortStock = (items: InventarioItem[]) =>
+            [...items].sort((a, b) =>
+              a.sucursal_id - b.sucursal_id || a.producto_id - b.producto_id
+            );
+          const sameStock =
+            JSON.stringify(sortStock(previous)) === JSON.stringify(sortStock(cloudInventory));
+          return sameStock ? previous : cloudInventory;
+        });
         setInventarioCloudReady(true);
       },
       (err) => console.warn('Notice subscribing to Firestore inventory:', err)
