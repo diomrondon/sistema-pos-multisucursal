@@ -10,7 +10,7 @@ interface FirebaseSyncSettingsProps {
   sucursales: Sucursal[];
   inventario: InventarioItem[];
   onRefreshData?: () => void;
-  onDataLoadedFromCloud?: (data: { productos?: Producto[]; empresaConfig?: EmpresaConfig; tiendaConfig?: TiendaConfig }) => void;
+  onDataLoadedFromCloud?: (data: { productos?: Producto[]; empresaConfig?: EmpresaConfig; tiendaConfig?: TiendaConfig; sucursales?: Sucursal[]; inventario?: InventarioItem[] }) => void;
 }
 
 export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
@@ -63,7 +63,7 @@ export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
       if (res.success) {
         setIsConnected(true);
         setStatusMessage({
-          text: `¡Éxito! Se sincronizaron ${res.count} productos y configuraciones en la nube de Firebase Firestore.`,
+          text: `¡Éxito! Se sincronizaron ${res.count} productos, sucursales, inventario y configuraciones en Firebase Firestore.`,
           type: 'success',
         });
         if (onRefreshData) onRefreshData();
@@ -82,7 +82,7 @@ export const FirebaseSyncSettings: React.FC<FirebaseSyncSettingsProps> = ({
     setStatusMessage({ text: 'Descargando datos actuales desde Firebase Firestore...', type: 'info' });
     try {
       const data = await fetchAllFromFirestore();
-      if (data && (data.productos || data.empresaConfig || data.tiendaConfig)) {
+      if (data && (data.productos || data.empresaConfig || data.tiendaConfig || data.sucursales || data.inventario)) {
         setIsConnected(true);
         if (onDataLoadedFromCloud) {
           onDataLoadedFromCloud(data);
