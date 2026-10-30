@@ -92,7 +92,11 @@ export const CxpManager: React.FC<CxpManagerProps> = ({
     setNewFactura('');
   };
 
-  const filteredList = cxpList.filter((item) => {
+  const branchScopedCxp = currentUser?.sucursal_id != null
+    ? cxpList.filter((item) => item.sucursalId === currentUser.sucursal_id)
+    : cxpList;
+
+  const filteredList = branchScopedCxp.filter((item) => {
     const matchesSearch =
       item.proveedorNombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.numeroFactura.toLowerCase().includes(searchTerm.toLowerCase());
