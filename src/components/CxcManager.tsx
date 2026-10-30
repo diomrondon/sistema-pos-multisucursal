@@ -14,7 +14,7 @@ import {
   FileCheck,
   Printer,
 } from 'lucide-react';
-import { CuentaPorCobrar, Cliente, EmpresaConfig, Usuario } from '../types';
+import { CuentaPorCobrar, Cliente, EmpresaConfig, Usuario, Sucursal } from '../types';
 import { formatUSD, formatBs, formatDual } from '../lib/currency';
 
 interface CxcManagerProps {
@@ -22,6 +22,7 @@ interface CxcManagerProps {
   clientes: Cliente[];
   empresaConfig: EmpresaConfig;
   currentUser: Usuario | null;
+  sucursales: Sucursal[];
   onRegistrarAbono: (cxcRegistroId: string, monto: number, metodoPago: string, referencia?: string) => void;
   onNuevaCuentaCobrar?: (cxc: Omit<CuentaPorCobrar, 'id' | 'abonos'>) => void;
 }
@@ -31,6 +32,7 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
   clientes,
   empresaConfig,
   currentUser,
+  sucursales,
   onRegistrarAbono,
   onNuevaCuentaCobrar,
 }) => {
@@ -46,6 +48,7 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
   // Manual new CxC modal
   const [showNewModal, setShowNewModal] = useState(false);
   const [newClienteId, setNewClienteId] = useState<number>(clientes[0]?.id || 1);
+  const [newSucursalId, setNewSucursalId] = useState<number>(currentUser?.sucursal_id ?? sucursales[0]?.id ?? 0);
   const [newConcepto, setNewConcepto] = useState<string>('');
   const [newMonto, setNewMonto] = useState<number>(50);
   const [newDiasCredito, setNewDiasCredito] = useState<number>(15);
@@ -78,6 +81,11 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
   const handleCreateNewCxc = (e: React.FormEvent) => {
     e.preventDefault();
     if (!onNuevaCuentaCobrar) return;
+    const sucursalId = currentUser?.sucursal_id ?? newSucursalId;
+    if (!sucursales.some((s) => s.id === sucursalId)) {
+      alert('Selecciona una sucursal válida para esta cuenta.');
+      return;
+    }
     const cliente = clientes.find((c) => c.id === newClienteId);
     if (!cliente) return;
 
@@ -85,6 +93,7 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
     const fechaVenc = new Date(Date.now() + newDiasCredito * 24 * 3600 * 1000).toISOString();
 
     onNuevaCuentaCobrar({
+      sucursalId,
       clienteId: cliente.id,
       clienteNombre: cliente.nombre,
       concepto: newConcepto.trim() || 'Crédito Directo Autorizado',
@@ -391,6 +400,15 @@ export const CxcManager: React.FC<CxcManagerProps> = ({
             </div>
 
             <form onSubmit={handleCreateNewCxc} className="p-5 space-y-4">
+              {currentUser?.sucursal_id == null && (
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Sucursal de la cuenta</label>
+                  <select value={newSucursalId} onChange={(e) => setNewSucursalId(Number(e.target.value))} required className="w-full bg-slate-950 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none">
+                    <option value={0} disabled>Selecciona una sucursal</option>
+                    {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="text-[11px] font-semibold text-slate-400 block mb-1">Cliente</label>
                 <select
