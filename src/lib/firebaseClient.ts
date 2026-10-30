@@ -338,6 +338,8 @@ export async function fetchAllFromFirestore(): Promise<{
   productos?: Producto[];
   empresaConfig?: EmpresaConfig;
   tiendaConfig?: TiendaConfig;
+  sucursales?: Sucursal[];
+  inventario?: InventarioItem[];
   pedidos?: PedidoOnline[];
 } | null> {
   try {
@@ -363,7 +365,22 @@ export async function fetchAllFromFirestore(): Promise<{
       result.productos = prods;
     }
 
-    // 4. Fetch pedidos_online
+    // 4. Fetch sucursales e inventario para reconstruir el stock por local.
+    const sucSnap = await getDocs(collection(db, 'sucursales'));
+    if (!sucSnap.empty) {
+      const branches: Sucursal[] = [];
+      sucSnap.forEach((d) => branches.push(d.data() as Sucursal));
+      result.sucursales = branches;
+    }
+
+    const invSnap = await getDocs(collection(db, 'inventario'));
+    if (!invSnap.empty) {
+      const stockItems: InventarioItem[] = [];
+      invSnap.forEach((d) => stockItems.push(d.data() as InventarioItem));
+      result.inventario = stockItems;
+    }
+
+    // 5. Fetch pedidos_online
     const pedSnap = await getDocs(collection(db, 'pedidos_online'));
     if (!pedSnap.empty) {
       const orders: PedidoOnline[] = [];
