@@ -15,7 +15,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import firebaseConfigData from '../../firebase-applet-config.json';
-import { Producto, PedidoOnline, EmpresaConfig, TiendaConfig, Sucursal, InventarioItem, Venta } from '../types';
+import { Producto, PedidoOnline, EmpresaConfig, TiendaConfig, Sucursal, InventarioItem, Venta, Compra, Cliente, Proveedor, CuentaPorCobrar, CuentaPorPagar } from '../types';
 
 export const firebaseConfig = {
   projectId: firebaseConfigData.projectId,
@@ -382,12 +382,24 @@ export async function syncAllToFirestore({
   tiendaConfig,
   sucursales,
   inventario,
+  ventas,
+  compras,
+  clientes,
+  proveedores,
+  cxc,
+  cxp,
 }: {
   productos: Producto[];
   empresaConfig: EmpresaConfig;
   tiendaConfig: TiendaConfig;
   sucursales: Sucursal[];
   inventario: InventarioItem[];
+  ventas?: Venta[];
+  compras?: Compra[];
+  clientes?: Cliente[];
+  proveedores?: Proveedor[];
+  cxc?: CuentaPorCobrar[];
+  cxp?: CuentaPorPagar[];
 }): Promise<{ success: boolean; count: number; error?: string }> {
   try {
     // Firestore permite como máximo 500 operaciones por lote. Usamos 450
@@ -420,6 +432,27 @@ export async function syncAllToFirestore({
         documentId: `${item.sucursal_id}_${item.producto_id}`,
         data: item,
       });
+    }
+
+    const financialCollections: Array<{ name: string; records: Array<{ registroId?: string }> }> = [
+      { name: 'ventas', records: ventas || [] },
+      { name: 'compras', records: compras || [] },
+      { name: 'clientes', records: clientes || [] },
+      { name: 'proveedores', records: proveedores || [] },
+      { name: 'cuentas_por_cobrar', records: cxc || [] },
+      { name: 'cuentas_por_pagar', records: cxp || [] },
+    ];
+    for (const group of financialCollections) {
+      for (const record of group.records) {
+        if (!record.registroId || !/^[A-Za-z0-9-]{16,80}$/.test(record.registroId)) {
+          throw new Error(`No se sincronizó ${group.name}: hay registros sin identificador único. Primero deben migrarse de forma segura.`);
+        }
+        writes.push({
+          collectionName: group.name,
+          documentId: record.registroId,
+          data: record,
+        });
+      }
     }
 
     // Comprobar todas las escrituras de configuración antes de informar éxito.
