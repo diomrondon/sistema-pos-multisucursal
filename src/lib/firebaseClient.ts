@@ -13,7 +13,6 @@ import {
   writeBatch,
   getDocs,
   limit,
-  deleteDoc,
 } from 'firebase/firestore';
 import firebaseConfigData from '../../firebase-applet-config.json';
 import { Producto, PedidoOnline, EmpresaConfig, TiendaConfig, Sucursal, InventarioItem, Venta } from '../types';
