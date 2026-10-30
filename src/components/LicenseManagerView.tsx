@@ -207,7 +207,7 @@ export const LicenseManagerView: React.FC<LicenseManagerViewProps> = ({
               rows={2}
               value={newKeyInput}
               onChange={(e) => setNewKeyInput(e.target.value)}
-              placeholder="LIC-eyJtYWNoaW5lSWQi..."
+              placeholder="POSLIC1.eyJtYWNoaW5lSWQi..."
               className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500 resize-none"
             />
             <div className="flex justify-end gap-2">
