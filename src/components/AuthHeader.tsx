@@ -44,9 +44,9 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
   const handleGoogleLogin = async () => {
     setIsSigningIn(true);
     setAuthError(null);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
       const credential = await signInWithPopup(auth, provider);
       const email = credential.user.email?.trim().toLowerCase();
 
@@ -73,7 +73,7 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
       });
 
       // Si el navegador bloquea la ventana emergente, usar redirección en la misma pestaña.
-      if (errorCode === 'auth/popup-blocked') {
+      if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
         try {
           await signInWithRedirect(auth, provider);
           return;
@@ -82,7 +82,8 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
           console.error('Error en el inicio de sesión por redirección:', redirectError);
           setAuthError(
             'Google no pudo abrir el acceso (' + (redirectFailure?.code || 'error desconocido') +
-            '). Revisa la conexión y la configuración de Firebase.'
+            ': ' + (redirectFailure?.message || 'sin detalle') +
+            '). Revisa la conexión y los dominios autorizados en Firebase.'
           );
           return;
         }
