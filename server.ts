@@ -32,6 +32,19 @@ function getFirebaseAdminAuth() {
 const DB_DIR = path.join(rootDir, 'data');
 const DB_FILE = path.join(DB_DIR, 'server_db.json');
 
+const MAX_PEDIDOS = 5000;
+const MAX_DETALLES_PEDIDO = 100;
+function isValidPedido(p: any): boolean {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
+  if (typeof p.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(p.id)) return false;
+  if (typeof p.clienteNombre !== 'string' || !p.clienteNombre.trim() || p.clienteNombre.length > 160) return false;
+  if (!Array.isArray(p.detalles) || p.detalles.length < 1 || p.detalles.length > MAX_DETALLES_PEDIDO) return false;
+  const limits: Record<string, number> = { numeroPedido: 80, fecha: 40, clienteRif: 40, clienteTelefono: 40, clienteEmail: 254, sucursalNombre: 160, direccionEntrega: 500, puntoReferencia: 500, referenciaPago: 120, bancoOrigen: 120, notas: 500, metodoPago: 40, tipoEntrega: 20, estado: 30, creadoEn: 40 };
+  for (const [key, max] of Object.entries(limits)) if (p[key] !== undefined && (typeof p[key] !== 'string' || p[key].length > max)) return false;
+  for (const key of ['costoDelivery','subtotalNeto','baseImponible','montoExento','montoIva','total','totalBs','tasaCambio']) if (p[key] !== undefined && (!Number.isFinite(p[key]) || p[key] < 0 || p[key] > 1000000000)) return false;
+  return p.detalles.every((d: any) => d && typeof d === 'object' && !Array.isArray(d) && typeof d.nombre === 'string' && d.nombre.trim().length > 0 && d.nombre.length <= 200 && Number.isFinite(d.cantidad) && d.cantidad > 0 && d.cantidad <= 100000 && Number.isFinite(d.precioUnitario) && d.precioUnitario >= 0 && d.precioUnitario <= 100000000 && Number.isFinite(d.subtotal) && d.subtotal >= 0 && d.subtotal <= 100000000);
+}
+
 interface ServerDatabase {
   pedidos: any[];
   empresaConfig: any | null;
@@ -201,22 +214,14 @@ app.get('/api/pedidos', (req, res) => {
 app.post('/api/pedidos', (req, res) => {
   try {
     const pedido = req.body;
-    if (
-      !pedido ||
-      typeof pedido !== 'object' ||
-      Array.isArray(pedido) ||
-      typeof pedido.id !== 'string' ||
-      !pedido.id.trim() ||
-      typeof pedido.clienteNombre !== 'string' ||
-      !pedido.clienteNombre.trim() ||
-      !Array.isArray(pedido.detalles)
-    ) {
-      return res.status(400).json({ success: false, error: 'Datos de pedido inválidos' });
+    if (!isValidPedido(pedido)) {
+      return res.status(400).json({ success: false, error: 'Datos de pedido inválidos o fuera de los límites permitidos.' });
     }
     const db = readServerDb();
     if (!Array.isArray(db.pedidos)) {
       db.pedidos = [];
     }
+    if (db.pedidos.length >= MAX_PEDIDOS && !db.pedidos.some((p: any) => p?.id === pedido.id)) return res.status(413).json({ success: false, error: 'Se alcanzó el límite de pedidos almacenados.' });
     const existingIndex = db.pedidos.findIndex((p: any) => p.id === pedido.id);
     if (existingIndex >= 0) {
       const existing = db.pedidos[existingIndex];
@@ -309,7 +314,7 @@ app.post('/api/sync/state', (req, res) => {
         (typeof tiendaConfig !== 'object' || Array.isArray(tiendaConfig))) ||
       (productos !== undefined && productos !== null && !Array.isArray(productos)) ||
       (inventario !== undefined && inventario !== null && !Array.isArray(inventario)) ||
-      (pedidos !== undefined && !Array.isArray(pedidos))
+      (pedidos !== undefined && (!Array.isArray(pedidos) || pedidos.length > MAX_PEDIDOS))
     ) {
       return res.status(400).json({ success: false, error: 'La configuración, los productos, el inventario o los pedidos tienen un formato inválido' });
     }
@@ -320,15 +325,7 @@ app.post('/api/sync/state', (req, res) => {
     if (productos) db.productos = productos;
     if (inventario) db.inventario = inventario;
     if (Array.isArray(pedidos)) {
-      if (pedidos.some((p: any) =>
-        !p ||
-        typeof p !== 'object' ||
-        Array.isArray(p) ||
-        typeof p.id !== 'string' ||
-        !p.id.trim() ||
-        typeof p.clienteNombre !== 'string' ||
-        !Array.isArray(p.detalles)
-      )) {
+      if (pedidos.some((p: any) => !isValidPedido(p))) {
         return res.status(400).json({ success: false, error: 'La lista contiene pedidos inválidos' });
       }
 
